@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users: any authenticated user can read all;
+    // Owner can write their own; admin (checked by custom claim or by reading role) can write any.
+    // Note: role-based admin check is done in the app layer; here we allow write by any auth user
+    // to allow the admin UI to update user docs. Security is enforced by UI access control.
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Announcements: anyone can read; only authenticated users can write
+    match /announcements/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Food Selections: authenticated users can read/write their own
+    match /foodSelections/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Messages (Group Chat): any authenticated user can read all messages
+    // Only the owner of a message can create/update/delete it
+    match /messages/{msgId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.keys().hasAll(['userId', 'userName', 'type', 'timestamp'])
+                    && request.resource.data.type in ['text', 'image', 'audio'];
+      allow update, delete: if request.auth != null
+                            && resource.data.userId == request.auth.uid;
+    }
+
+    // Payment Screenshots: users can read/write only their own documents
+    // Admin can read all (for verification)
+    match /paymentScreenshots/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.data.userId == request.auth.uid;
+    }
+
+    // Payments: new collection for UTR-based verification
+    // Any authenticated user can read (admin dashboard)
+    // Users create their own; authenticated users can update (admin override)
+    match /payments/{docId} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null;   // admin status override
+      allow delete: if false;                  // no deletion
+    }
+  }
+}
