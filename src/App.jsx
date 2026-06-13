@@ -7,11 +7,11 @@ import PGMemberHome  from './components/StudentHome';
 
 import MessHome       from './components/MessHome';
 import AdminHome      from './components/AdminHome';
-import UserManagement from './components/UserManagement';
 import AdminPayment   from './components/AdminPayment';
 import Chat           from './components/Chat';
 import Payment        from './components/Payment';
-import { HomeIcon, ChatIcon, PaymentIcon, UsersIcon } from './components/Icons';
+import SmartAssistant from './components/SmartAssistant';
+import { HomeIcon, ChatIcon, PaymentIcon, SparklesIcon } from './components/Icons';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const USER_TYPE_LABELS = {
@@ -154,8 +154,11 @@ function App() {
           <AdminPayment />
         )}
 
-        {/* Users — admin only */}
-        {activeTab === 'users' && isAdmin && <UserManagement />}
+        {/* Smart Assistant — PG Members + Mess Members only (not admin) */}
+        {activeTab === 'assistant' && !isAdmin && (
+          <SmartAssistant currentUser={currentUser} />
+        )}
+
       </div>
 
       {/* ── Bottom navigation ── */}
@@ -189,14 +192,14 @@ function App() {
           <div className="nav-label">{isAdmin ? 'Payments' : 'Payment'}</div>
         </button>
 
-        {/* Users — admin only */}
-        {isAdmin && (
+        {/* Smart Assistant — members only */}
+        {!isAdmin && (
           <button
-            className={`nav-item ${activeTab === 'users' ? 'active' : ''}`}
-            onClick={() => setActiveTab('users')}
+            className={`nav-item ${activeTab === 'assistant' ? 'active' : ''}`}
+            onClick={() => setActiveTab('assistant')}
           >
-            <UsersIcon className="nav-icon" />
-            <div className="nav-label">Users</div>
+            <SparklesIcon className="nav-icon" />
+            <div className="nav-label">Assistant</div>
           </button>
         )}
       </div>
