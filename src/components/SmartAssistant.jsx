@@ -35,25 +35,143 @@ function greetingByTime() {
   return 'Good night';
 }
 
-// Converts **bold** and bullet lists to inline styled spans
-function renderMarkdown(text) {
-  const lines = text.split('\n');
-  return lines.map((line, i) => {
-    // Bold: **text**
-    const parts = line.split(/\*\*(.*?)\*\*/g);
-    const formatted = parts.map((p, j) => (j % 2 === 1 ? <strong key={j}>{p}</strong> : p));
+// Helper to parse inline bold, italic, code
+function parseInlineMarkdown(text) {
+  if (!text) return '';
 
-    if (line.startsWith('• ') || line.startsWith('- ')) {
-      return (
-        <div key={i} className="sa-md-bullet">
-          <span className="sa-md-dot">•</span>
-          <span>{formatted.slice(1)}</span>
-        </div>
-      );
+  const parts = [];
+  const inlineRegex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_)/g;
+  const tokens = text.split(inlineRegex);
+
+  tokens.forEach((token, index) => {
+    if (token.startsWith('`') && token.endsWith('`')) {
+      parts.push(<code key={index} className="sa-md-inline-code">{token.slice(1, -1)}</code>);
+    } else if (token.startsWith('**') && token.endsWith('**')) {
+      parts.push(<strong key={index}>{token.slice(2, -2)}</strong>);
+    } else if ((token.startsWith('*') && token.endsWith('*')) || (token.startsWith('_') && token.endsWith('_'))) {
+      parts.push(<em key={index}>{token.slice(1, -1)}</em>);
+    } else {
+      parts.push(token);
     }
-    if (line.trim() === '') return <div key={i} className="sa-md-spacer" />;
-    return <div key={i}>{formatted}</div>;
   });
+
+  return parts;
+}
+
+// Converts Markdown formatting (headers, bulleted lists, numbered lists, code blocks, bold, italic, inline code)
+function renderMarkdown(text) {
+  if (!text) return null;
+
+  const blocks = [];
+  const parts = text.split(/(```[\s\S]*?```)/g);
+
+  parts.forEach((part) => {
+    if (part.startsWith('```') && part.endsWith('```')) {
+      const lines = part.slice(3, -3).split('\n');
+      let language = '';
+      if (lines[0] && !lines[0].includes(' ') && lines[0].length < 15) {
+        language = lines.shift().trim();
+      }
+      const code = lines.join('\n').trim();
+      blocks.push({
+        type: 'code',
+        language,
+        code
+      });
+    } else {
+      const lines = part.split('\n');
+      let currentList = null;
+
+      lines.forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          if (currentList) {
+            blocks.push(currentList);
+            currentList = null;
+          }
+          return;
+        }
+
+        const headerMatch = line.match(/^(#{1,6})\s+(.*)$/);
+        if (headerMatch) {
+          if (currentList) {
+            blocks.push(currentList);
+            currentList = null;
+          }
+          blocks.push({
+            type: 'header',
+            level: headerMatch[1].length,
+            text: headerMatch[2]
+          });
+          return;
+        }
+
+        const listMatch = line.match(/^([*\-•])\s+(.*)$/);
+        const numListMatch = line.match(/^(\d+)\.\s+(.*)$/);
+
+        if (listMatch) {
+          if (!currentList || currentList.listType !== 'unordered') {
+            if (currentList) blocks.push(currentList);
+            currentList = { type: 'list', listType: 'unordered', items: [] };
+          }
+          currentList.items.push(listMatch[2]);
+        } else if (numListMatch) {
+          if (!currentList || currentList.listType !== 'ordered') {
+            if (currentList) blocks.push(currentList);
+            currentList = { type: 'list', listType: 'ordered', items: [] };
+          }
+          currentList.items.push(numListMatch[2]);
+        } else {
+          if (currentList) {
+            blocks.push(currentList);
+            currentList = null;
+          }
+          blocks.push({
+            type: 'paragraph',
+            text: line
+          });
+        }
+      });
+
+      if (currentList) {
+        blocks.push(currentList);
+      }
+    }
+  });
+
+  return (
+    <div className="sa-md-container">
+      {blocks.map((block, idx) => {
+        switch (block.type) {
+          case 'code':
+            return (
+              <pre key={idx} className="sa-md-code-block">
+                {block.language && <span className="sa-md-code-lang">{block.language}</span>}
+                <code>{block.code}</code>
+              </pre>
+            );
+          case 'header': {
+            const Tag = `h${Math.min(block.level + 2, 6)}`;
+            return <Tag key={idx} className="sa-md-header">{parseInlineMarkdown(block.text)}</Tag>;
+          }
+          case 'list': {
+            const Tag = block.listType === 'ordered' ? 'ol' : 'ul';
+            return (
+              <Tag key={idx} className={`sa-md-list ${block.listType}`}>
+                {block.items.map((item, itemIdx) => (
+                  <li key={itemIdx}>{parseInlineMarkdown(item)}</li>
+                ))}
+              </Tag>
+            );
+          }
+          case 'paragraph':
+            return <p key={idx} className="sa-md-paragraph">{parseInlineMarkdown(block.text)}</p>;
+          default:
+            return null;
+        }
+      })}
+    </div>
+  );
 }
 
 // ─── Typing indicator ─────────────────────────────────────────────────────────
@@ -161,6 +279,12 @@ function HomeScreen({ currentUser, context, onQuickAction, onStartChat }) {
         )}
       </div>
 
+      {/* Prominent Chat with Assistant Button */}
+      <button className="sa-primary-chat-btn" onClick={onStartChat}>
+        <span>💬</span>
+        Chat with Assistant
+      </button>
+
       {/* Quick actions */}
       <div className="sa-section-label">Quick Actions</div>
       <div className="sa-actions-grid">
@@ -176,12 +300,6 @@ function HomeScreen({ currentUser, context, onQuickAction, onStartChat }) {
           </button>
         ))}
       </div>
-
-      {/* Free chat CTA */}
-      <button className="sa-free-chat-btn" onClick={onStartChat}>
-        <span>💬</span>
-        Ask anything…
-      </button>
     </div>
   );
 }
@@ -344,11 +462,28 @@ function SmartAssistant({ currentUser }) {
             context={context}
             onSelect={handleOnboardSelect}
           />
-          {screen === 'onboard_topic' && (
-            <button className="sa-skip-btn" onClick={() => setScreen('home')}>
-              Skip → Go to home
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center', marginTop: '12px' }}>
+            <button
+              className="sa-skip-btn"
+              style={{ fontWeight: '700', color: '#6366f1', textDecoration: 'none' }}
+              onClick={() => {
+                setContext({ mood: null, topic: null });
+                setScreen('chat');
+              }}
+            >
+              Skip Onboarding & Chat Directly 💬
             </button>
-          )}
+            <button
+              className="sa-skip-btn"
+              style={{ fontSize: '11px', textDecoration: 'none', opacity: 0.7 }}
+              onClick={() => {
+                setContext({ mood: null, topic: null });
+                setScreen('home');
+              }}
+            >
+              Go to Home Screen
+            </button>
+          </div>
         </div>
       )}
 
@@ -394,17 +529,18 @@ function SmartAssistant({ currentUser }) {
           {messages.length === 0 && !loading && (
             <div className="sa-suggestions">
               {[
-                'Recommend a movie for tonight 🎬',
-                'What should I eat for dinner? 🍽',
-                'Help me study better 📚',
-                'Give me a productivity tip ⚡',
+                { label: 'Explain a concept 💡', val: 'Explain the concept of ' },
+                { label: 'Recommend a movie 🎬', val: 'Recommend a movie ' },
+                { label: 'Suggest food 🍽', val: 'Suggest some food options ' },
+                { label: 'Help me study 📚', val: 'Help me study ' },
+                { label: 'Productivity tips ⚡', val: 'Give me some productivity tips ' },
               ].map((s, i) => (
                 <button
                   key={i}
                   className="sa-suggestion-chip"
-                  onClick={() => { setInput(s); setTimeout(() => inputRef.current?.focus(), 50); }}
+                  onClick={() => { setInput(s.val); setTimeout(() => inputRef.current?.focus(), 50); }}
                 >
-                  {s}
+                  {s.label}
                 </button>
               ))}
             </div>

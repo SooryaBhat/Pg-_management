@@ -1,9 +1,9 @@
 // ─── Gemini AI Service ────────────────────────────────────────────────────────
-// Uses Gemini 1.5 Flash via REST API.
+// Uses Gemini 3.5 Flash via REST API.
 // Falls back to mock responses if the key is missing or the call fails.
 
 const API_KEY  = import.meta.env.VITE_GEMINI_API_KEY;
-const API_URL  = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+const API_URL  = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${API_KEY}`;
 
 // ── System prompt that gives the assistant its persona ────────────────────────
 const SYSTEM_PROMPT = `You are a friendly and helpful Smart Assistant for PG (Paying Guest) residents.
@@ -15,10 +15,11 @@ You help users with:
 - Productivity tips and general lifestyle advice
 - General helpful conversation
 
-Always be warm, concise, and practical. Format your responses clearly with short paragraphs or bullet points.
+Always be warm, concise, and practical. Format your responses clearly with short paragraphs, bullet points, headers, or code blocks where appropriate.
 When recommending movies/shows, include: Title • Genre • Why it suits them.
 When recommending food, include what it is, why it suits the moment, and any easy tips.
 For study help, be educational but easy to understand.
+For technical, general, or educational questions (e.g. "What is gravity?", "Explain machine learning"), answer directly and comprehensively with clean formatting. Do NOT repeatedly mention or force a connection to the user's mood, and do not reference their mood or PG living status unless it is directly relevant.
 Keep responses mobile-friendly (not too long).
 Always respond in a friendly, conversational tone.`;
 
@@ -68,9 +69,9 @@ function getMockResponse(prompt) {
 
 // ── Build Gemini request body ──────────────────────────────────────────────────
 function buildRequest(history, userMessage, context) {
-  const contextNote = context
+  const contextNote = context && (context.mood || context.topic)
     ? `\n\nUser context — Mood: ${context.mood || 'not specified'}. Looking for help with: ${context.topic || 'general'}.`
-    : '';
+    : '\n\nNo specific mood or topic context has been selected by the user. Respond generally and directly to their messages without mentioning mood.';
 
   const contents = [
     // Seed the conversation with system context as first turn
@@ -134,7 +135,7 @@ export async function askGemini(userMessage, history = [], context = null) {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      console.error('Gemini API error:', err);
+      console.error('Gemini API error:', res.status, res.statusText, err);
       // Graceful fallback
       return getMockResponse(userMessage);
     }

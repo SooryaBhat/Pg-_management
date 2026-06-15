@@ -5,10 +5,12 @@ import {
   query, where, serverTimestamp,
 } from 'firebase/firestore';
 import { CloseIcon } from './Icons';
+import { sendNotificationToUser } from '../services/notificationService';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const RENT_AMOUNT      = 2500;
-const FOOD_COST_PER_DAY = 65;
+const RENT_AMOUNT    = 2500;
+const BREAKFAST_COST = 35;
+const DINNER_COST    = 40;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function getMonthOptions() {
@@ -82,6 +84,25 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
           createdAt:          serverTimestamp(),
         });
       }
+
+      // Dispatch payment status notification
+      let title = '';
+      let msgBody = '';
+      if (newStatus === 'paid') {
+        title = 'Payment Approved ✅';
+        msgBody = `Your payment of ${fmtRupee(user.total)} for ${selectedMonth.label} has been approved.`;
+      } else if (newStatus === 'rejected') {
+        title = 'Payment Rejected ❌';
+        msgBody = `Your payment of ${fmtRupee(user.total)} for ${selectedMonth.label} was rejected. Please check details or contact admin.`;
+      } else if (newStatus === 'pending_review') {
+        title = 'Payment Requires Review 🔍';
+        msgBody = `Your payment of ${fmtRupee(user.total)} for ${selectedMonth.label} is flagged for review.`;
+      }
+
+      if (title) {
+        await sendNotificationToUser(user.uid, title, msgBody, 'payment_status');
+      }
+
       await onStatusChange();
       onClose();
     } catch (err) {
@@ -125,7 +146,9 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
             <div className="breakdown-row">
               <div className="breakdown-label">
                 Food Charges
-                <span className="breakdown-detail">{user.foodDays} days × ₹{FOOD_COST_PER_DAY}</span>
+                <span className="breakdown-detail">
+                  Breakfast: {user.breakfast} × ₹{BREAKFAST_COST} | Dinner: {user.dinner} × ₹{DINNER_COST}
+                </span>
               </div>
               <div className="breakdown-value">{fmtRupee(user.foodCost)}</div>
             </div>
@@ -390,7 +413,7 @@ function AdminPayment() {
         const breakfast = sels.filter(s => s.breakfast).length;
         const dinner    = sels.filter(s => s.dinner).length;
         const foodDays  = sels.filter(s => s.breakfast || s.dinner).length;
-        const foodCost  = foodDays * FOOD_COST_PER_DAY;
+        const foodCost  = (breakfast * BREAKFAST_COST) + (dinner * DINNER_COST);
         const rent      = u.userType === 'pg_member' ? RENT_AMOUNT : 0;
         const total     = rent + foodCost;
         const payment   = paymentByUser[u.uid] || null;

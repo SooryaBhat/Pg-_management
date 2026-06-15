@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getMessaging, isSupported } from "firebase/messaging";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCel-IRB04q6WGIQDFYmchr8E-lYkGK2RI",
@@ -14,7 +15,16 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Firebase Auth + Firestore only.
-// File storage is handled by Supabase (see src/supabase.js)
+// Firebase Auth + Firestore
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Conditionally initialize Messaging to avoid crash in environments where FCM isn't supported (e.g. some webviews/incognito)
+export let messaging = null;
+isSupported().then((supported) => {
+  if (supported) {
+    messaging = getMessaging(app);
+  }
+}).catch((err) => {
+  console.warn("FCM isSupported check failed. FCM notifications will be unavailable.", err);
+});

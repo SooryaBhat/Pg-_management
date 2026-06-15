@@ -8,11 +8,12 @@ import {
 import { RupeeIcon, CalendarIcon, ImageIcon, CloseIcon } from './Icons';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const RENT_AMOUNT      = 2500;
-const FOOD_COST_PER_DAY = 65;
-const UPI_ID           = 'nishanpoojary1515@oksbi';
-const UPI_NAME         = 'PG%20Management';
-const MAX_SS_SIZE       = 5 * 1024 * 1024; // 5 MB
+const RENT_AMOUNT    = 2500;
+const BREAKFAST_COST = 35;
+const DINNER_COST    = 40;
+const UPI_ID         = 'nishanpoojary1515@oksbi';
+const UPI_NAME       = 'PG%20Management';
+const MAX_SS_SIZE     = 5 * 1024 * 1024; // 5 MB
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function StatusBanner({ status }) {
@@ -98,7 +99,7 @@ function Payment({ userType, currentUser }) {
         } catch { /* skip */ }
       }
 
-      const foodCost    = daysWithFood * FOOD_COST_PER_DAY;
+      const foodCost    = (totalBreakfast * BREAKFAST_COST) + (totalDinner * DINNER_COST);
       const rent        = isMess ? 0 : RENT_AMOUNT;
       const totalAmount = rent + foodCost;
 
@@ -279,7 +280,9 @@ function Payment({ userType, currentUser }) {
         <div className="breakdown-row">
           <div className="breakdown-label">
             Food Charges
-            <span className="breakdown-detail">{monthlyData.foodDays} days × ₹{FOOD_COST_PER_DAY}</span>
+            <span className="breakdown-detail">
+              Breakfast: {monthlyData.breakfastCount} × ₹{BREAKFAST_COST} | Dinner: {monthlyData.dinnerCount} × ₹{DINNER_COST}
+            </span>
           </div>
           <div className="breakdown-value">₹{monthlyData.foodCost}</div>
         </div>
@@ -467,8 +470,8 @@ function Payment({ userType, currentUser }) {
             <div className="info-icon">ℹ️</div>
             <div className="info-text">
               {isMess
-                ? 'Food cost ₹65/day. Mess Members: food charges only.'
-                : 'Rent ₹2,500 + Food ₹65/day. After paying, enter UTR & upload screenshot.'}
+                ? `Breakfast ₹${BREAKFAST_COST}, Dinner ₹${DINNER_COST}. Mess Members: food charges only.`
+                : `Rent ₹2,500 + Breakfast ₹${BREAKFAST_COST}, Dinner ₹${DINNER_COST}. After paying, enter UTR & upload screenshot.`}
             </div>
           </div>
         </div>

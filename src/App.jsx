@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { 
+  doc, getDoc, collection, query, where, onSnapshot, 
+  updateDoc, serverTimestamp, getDocs, writeBatch 
+} from 'firebase/firestore';
 import { auth, db } from './firebase';
 import AuthScreen     from './components/AuthScreen';
 import PGMemberHome  from './components/StudentHome';
@@ -11,7 +14,12 @@ import AdminPayment   from './components/AdminPayment';
 import Chat           from './components/Chat';
 import Payment        from './components/Payment';
 import SmartAssistant from './components/SmartAssistant';
-import { HomeIcon, ChatIcon, PaymentIcon, SparklesIcon } from './components/Icons';
+import NotificationsPage from './components/NotificationsPage';
+import { HomeIcon, ChatIcon, PaymentIcon, SparklesIcon, BellIcon } from './components/Icons';
+import { 
+  requestNotificationPermission, registerFCMToken, 
+  setupForegroundMessageListener, runPaymentReminderCheck 
+} from './services/notificationService';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const USER_TYPE_LABELS = {
@@ -30,6 +38,98 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab,   setActiveTab]   = useState('home');
   const [loading,     setLoading]     = useState(true);
+  
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [lastReadChat, setLastReadChat] = useState(null);
+  const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Swipe Gesture Navigation
+  const [touchStartX, setTouchStartX] = useState(0);
+  const [touchStartY, setTouchStartY] = useState(0);
+  const [touchEndX, setTouchEndX] = useState(0);
+  const [touchEndY, setTouchEndY] = useState(0);
+
+  const handleTouchStart = (e) => {
+    const target = e.target;
+    // Don't trigger swiping if touching inputs, textareas, scrollable suggestions, etc.
+    const isInteractive = target.tagName === 'INPUT' || 
+                          target.tagName === 'TEXTAREA' || 
+                          target.closest('input') || 
+                          target.closest('textarea') || 
+                          target.closest('.nt-categories') || 
+                          target.closest('.sa-suggestions') || 
+                          target.closest('.ap-summary-row') || 
+                          target.closest('.chat-messages') || 
+                          target.closest('.sa-messages-area') || 
+                          target.closest('.calendar-grid');
+    if (isInteractive) {
+      setTouchStartX(0);
+      setTouchStartY(0);
+      setTouchEndX(0);
+      setTouchEndY(0);
+      return;
+    }
+
+    setTouchStartX(e.targetTouches[0].clientX);
+    setTouchStartY(e.targetTouches[0].clientY);
+    setTouchEndX(e.targetTouches[0].clientX);
+    setTouchEndY(e.targetTouches[0].clientY);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!touchStartX) return;
+    setTouchEndX(e.targetTouches[0].clientX);
+    setTouchEndY(e.targetTouches[0].clientY);
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStartX || !touchEndX) return;
+    const diffX = touchStartX - touchEndX;
+    const diffY = touchStartY - touchEndY;
+    const minDistance = 60; // minimum horizontal pixels for swipe trigger
+
+    // Make sure it's a primary horizontal swipe gesture
+    if (Math.abs(diffX) > minDistance && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
+      const isAdmin    = userType === 'admin';
+      const isPGMember = userType === 'pg_member';
+
+      // Define tab order for current user
+      const tabs = ['home'];
+      if (isAdmin || isPGMember) {
+        tabs.push('chat');
+      }
+      tabs.push('payment');
+      if (!isAdmin) {
+        tabs.push('assistant');
+      }
+
+      const currentIndex = tabs.indexOf(activeTab);
+      if (currentIndex !== -1) {
+        if (diffX > 0 && currentIndex < tabs.length - 1) {
+          // Swipe Left -> Next Tab
+          setActiveTab(tabs[currentIndex + 1]);
+        } else if (diffX < 0 && currentIndex > 0) {
+          // Swipe Right -> Previous Tab
+          setActiveTab(tabs[currentIndex - 1]);
+        }
+      }
+    }
+
+    // Reset touch coordinates for next gesture
+    setTouchStartX(0);
+    setTouchStartY(0);
+    setTouchEndX(0);
+    setTouchEndY(0);
+  };
+
+  const handleTouchCancel = () => {
+    setTouchStartX(0);
+    setTouchStartY(0);
+    setTouchEndX(0);
+    setTouchEndY(0);
+  };
 
   const handleLogin = (resolvedUserType) => setUserType(resolvedUserType);
 
@@ -39,10 +139,121 @@ function App() {
       setUserType(null);
       setCurrentUser(null);
       setActiveTab('home');
+      setShowProfileModal(false);
     } catch {
       alert('Error signing out. Please try again.');
     }
   };
+
+
+
+  // ── Listen to notification permission, background setup, active tab, and reminders ──
+  useEffect(() => {
+    if (currentUser?.uid) {
+      if (Notification.permission === 'granted') {
+        registerFCMToken(currentUser.uid);
+      } else if (Notification.permission === 'default') {
+        const hasAsked = localStorage.getItem('hasRequestedNotifications');
+        if (!hasAsked) {
+          setTimeout(() => setShowPermissionPrompt(true), 1500);
+        }
+      }
+
+      setupForegroundMessageListener();
+      runPaymentReminderCheck();
+    }
+  }, [currentUser?.uid]);
+
+  // Keep Firestore active tab state synchronized
+  useEffect(() => {
+    if (currentUser?.uid) {
+      updateDoc(doc(db, 'users', currentUser.uid), {
+        currentActiveTab: activeTab,
+        lastActiveAt: serverTimestamp()
+      }).catch(err => console.error('Error updating active tab', err));
+    }
+  }, [activeTab, currentUser?.uid]);
+
+  // Listen to unread notifications count
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', currentUser.uid),
+      where('read', '==', false)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setUnreadNotificationsCount(snap.size);
+    }, (err) => console.error('Notifications count listener error:', err));
+    return () => unsub();
+  }, [currentUser?.uid]);
+
+  // Auto-mark notifications as read when entering notifications tab
+  useEffect(() => {
+    if (activeTab === 'notifications' && currentUser?.uid) {
+      const markAllAsRead = async () => {
+        try {
+          const q = query(
+            collection(db, 'notifications'),
+            where('userId', '==', currentUser.uid),
+            where('read', '==', false)
+          );
+          const snap = await getDocs(q);
+          if (snap.empty) return;
+          const batch = writeBatch(db);
+          snap.docs.forEach(d => {
+            batch.update(doc(db, 'notifications', d.id), { read: true });
+          });
+          await batch.commit();
+        } catch (err) {
+          console.error('Error marking notifications read on tab enter:', err);
+        }
+      };
+      markAllAsRead();
+    }
+  }, [activeTab, currentUser?.uid]);
+
+  // Listen to user lastReadChatTimestamp
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const unsub = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setLastReadChat(data.lastReadChatTimestamp ? (data.lastReadChatTimestamp.toDate ? data.lastReadChatTimestamp.toDate() : new Date(data.lastReadChatTimestamp)) : new Date(0));
+      }
+    });
+    return () => unsub();
+  }, [currentUser?.uid]);
+
+  // Listen to messages to count unread messages
+  useEffect(() => {
+    if (!currentUser?.uid || lastReadChat === null) return;
+    const q = query(collection(db, 'messages'));
+    const unsub = onSnapshot(q, (snap) => {
+      let count = 0;
+      snap.docs.forEach(d => {
+        const data = d.data();
+        const senderId = data.userId;
+        if (senderId === currentUser.uid) return; // ignore own messages
+
+        const msgTime = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp)) : null;
+        if (msgTime && msgTime > lastReadChat) {
+          count++;
+        }
+      });
+      setUnreadChatCount(count);
+    });
+    return () => unsub();
+  }, [currentUser?.uid, lastReadChat]);
+
+  // Reset chat count when viewing chat
+  useEffect(() => {
+    if (activeTab === 'chat' && currentUser?.uid && unreadChatCount > 0) {
+      updateDoc(doc(db, 'users', currentUser.uid), {
+        lastReadChatTimestamp: new Date()
+      }).catch(e => console.error("Error updating lastReadChatTimestamp", e));
+    }
+  }, [activeTab, currentUser?.uid, unreadChatCount]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -105,34 +316,56 @@ function App() {
   return (
     <div className="app-container">
 
-      {/* ── Top-right: role badge + logout ── */}
-      <div style={{
-        position: 'fixed', top: '12px', right: '12px',
-        zIndex: 1000, display: 'flex', alignItems: 'center', gap: '8px',
-      }} className="no-print">
-        <div style={{
-          padding: '4px 10px',
-          background: USER_TYPE_COLORS[userType] + '20',
-          color: USER_TYPE_COLORS[userType],
-          borderRadius: '12px', fontSize: '12px', fontWeight: '700',
-          border: `1px solid ${USER_TYPE_COLORS[userType]}40`,
-        }}>
-          {USER_TYPE_LABELS[userType]}
+      {/* ── Top Header Bar ── */}
+      <div className="top-header no-print">
+        <div className="top-header-brand">
+          Nanda Gokula
         </div>
-        <button
-          onClick={handleLogout}
-          style={{
-            padding: '8px 14px', background: '#ef4444', color: 'white',
-            border: 'none', borderRadius: '8px', fontSize: '13px',
-            fontWeight: '600', cursor: 'pointer',
-          }}
-        >
-          Logout
-        </button>
+        <div className="top-header-actions">
+          {/* Bell Icon button */}
+          <button
+            onClick={() => setActiveTab('notifications')}
+            className={`bell-btn ${activeTab === 'notifications' ? 'active' : ''}`}
+            title="Notifications"
+          >
+            <BellIcon className="nav-icon" style={{ width: '20px', height: '20px', color: activeTab === 'notifications' ? '#4f46e5' : '#4b5563' }} />
+            {unreadNotificationsCount > 0 && (
+              <span className="wa-badge bell-badge">
+                {unreadNotificationsCount}
+              </span>
+            )}
+          </button>
+
+          <div
+            className="role-badge"
+            style={{
+              background: USER_TYPE_COLORS[userType] + '20',
+              color: USER_TYPE_COLORS[userType],
+              border: `1px solid ${USER_TYPE_COLORS[userType]}40`,
+              cursor: 'pointer'
+            }}
+            onClick={() => setShowProfileModal(true)}
+            title="View Profile & Settings"
+          >
+            {USER_TYPE_LABELS[userType]}
+          </div>
+          <button
+            onClick={handleLogout}
+            className="logout-btn"
+          >
+            Logout
+          </button>
+        </div>
       </div>
 
       {/* ── Main content ── */}
-      <div className="main-app">
+      <div 
+        className="main-app"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
+      >
         {/* Home tab */}
         {activeTab === 'home' && (
           isAdmin    ? <AdminHome  currentUser={currentUser} /> :
@@ -159,6 +392,11 @@ function App() {
           <SmartAssistant currentUser={currentUser} />
         )}
 
+        {/* Notifications tab */}
+        {activeTab === 'notifications' && (
+          <NotificationsPage currentUser={currentUser} />
+        )}
+
       </div>
 
       {/* ── Bottom navigation ── */}
@@ -178,7 +416,14 @@ function App() {
             className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`}
             onClick={() => setActiveTab('chat')}
           >
-            <ChatIcon className="nav-icon" />
+            <div style={{ position: 'relative' }}>
+              <ChatIcon className="nav-icon" />
+              {unreadChatCount > 0 && (
+                <span className="wa-badge chat-badge">
+                  {unreadChatCount}
+                </span>
+              )}
+            </div>
             <div className="nav-label">Chat</div>
           </button>
         )}
@@ -203,6 +448,83 @@ function App() {
           </button>
         )}
       </div>
+
+      {/* ── Custom Notification Permission Modal ── */}
+      {showPermissionPrompt && (
+        <div className="modal-overlay" style={{ zIndex: 2000 }}>
+          <div className="modal" style={{ maxWidth: '400px', padding: '24px', textAlign: 'center' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔔</div>
+            <h3 style={{ fontSize: '18px', fontWeight: '800', marginBottom: '8px' }}>Enable Notifications</h3>
+            <p style={{ fontSize: '14px', color: '#4b5563', lineHeight: '1.5', marginBottom: '24px' }}>
+              Allow notifications to receive announcements, payment reminders, and chat updates.
+            </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                className="cancel-btn"
+                style={{ flex: 1, padding: '10px' }}
+                onClick={() => {
+                  localStorage.setItem('hasRequestedNotifications', 'true');
+                  setShowPermissionPrompt(false);
+                }}
+              >
+                Not Now
+              </button>
+              <button
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  background: 'linear-gradient(135deg, #6366f1, #7c3aed)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+                onClick={async () => {
+                  localStorage.setItem('hasRequestedNotifications', 'true');
+                  setShowPermissionPrompt(false);
+                  await requestNotificationPermission(currentUser.uid);
+                }}
+              >
+                Allow
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* ── My Profile & Settings Modal ── */}
+      {showProfileModal && (
+        <div className="modal-overlay" style={{ zIndex: 2000 }} onClick={() => setShowProfileModal(false)}>
+          <div className="modal profile-modal" style={{ maxWidth: '380px', padding: '24px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header" style={{ justifyContent: 'space-between', display: 'flex', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #f3f4f6' }}>
+              <h3 className="modal-title" style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#111827' }}>My Profile</h3>
+              <button className="modal-close" onClick={() => setShowProfileModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '20px', color: '#9ca3af' }}>✕</button>
+            </div>
+            
+            <div style={{ marginBottom: '20px', padding: '16px', background: '#f9fafb', borderRadius: '12px', textAlign: 'left', border: '1px solid #f3f4f6' }}>
+              <div style={{ fontSize: '17px', fontWeight: '800', color: '#111827', marginBottom: '4px' }}>
+                {currentUser?.fullName || currentUser?.name || 'User'}
+              </div>
+              <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px', fontFamily: 'monospace' }}>
+                @{currentUser?.username || 'username'}
+              </div>
+              <div style={{ display: 'inline-block', padding: '4px 10px', background: USER_TYPE_COLORS[userType] + '20', color: USER_TYPE_COLORS[userType], borderRadius: '8px', fontSize: '11px', fontWeight: '700', border: `1px solid ${USER_TYPE_COLORS[userType]}40` }}>
+                {USER_TYPE_LABELS[userType]}
+              </div>
+            </div>
+
+            <button
+              className="cancel-btn"
+              style={{ width: '100%', padding: '12px', fontSize: '14px' }}
+              onClick={() => setShowProfileModal(false)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

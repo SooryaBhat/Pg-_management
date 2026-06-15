@@ -2,31 +2,53 @@ import { useState, useEffect } from 'react';
 import { MegaphoneIcon, CloseIcon } from './Icons';
 import { db } from '../firebase';
 import { doc, setDoc, collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { sendNotificationToUser } from '../services/notificationService';
 
 function AdminHome() {
   const [announcement, setAnnouncement] = useState('');
   const [showModal, setShowModal] = useState(null);
-  const [todayCount, setTodayCount] = useState({ breakfast: 0, dinner: 0, total: 0 });
-  const [tomorrowCount, setTomorrowCount] = useState({ breakfast: 0, dinner: 0, total: 0 });
-  const [upcomingCount, setUpcomingCount] = useState(0);
   const [modalData, setModalData] = useState([]);
+  const [selections, setSelections] = useState([]);
+  const [currentDate, setCurrentDate] = useState(new Date());
 
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // Automatically update currentDate every 10 seconds (handles date changes and transitions)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDate(new Date());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
 
-  // Proper date formatting with padding
-  const formatDateKey = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+  // Robust date parser to handle both YYYY-MM-DD and DD-MM-YYYY
+  const parseDate = (dateStr) => {
+    if (!dateStr) return null;
+    const parts = dateStr.split(/[-/]/);
+    if (parts.length === 3) {
+      const p0 = parts[0].trim();
+      const p1 = parts[1].trim();
+      const p2 = parts[2].trim();
+      if (p0.length === 4) {
+        // YYYY-MM-DD
+        return new Date(Number(p0), Number(p1) - 1, Number(p2));
+      } else if (p2.length === 4) {
+        // DD-MM-YYYY
+        return new Date(Number(p2), Number(p1) - 1, Number(p0));
+      }
+    }
+    const parsed = new Date(dateStr);
+    return isNaN(parsed.getTime()) ? null : parsed;
   };
-  
-  const todayKey = formatDateKey(today);
-  const tomorrowKey = formatDateKey(tomorrow);
 
+  // Helper to zero out hours/minutes/seconds/milliseconds
+  const getCleanDate = (date) => {
+    const clean = new Date(date);
+    clean.setHours(0, 0, 0, 0);
+    return clean;
+  };
 
+  const todayClean = getCleanDate(currentDate);
+  const tomorrowClean = new Date(todayClean);
+  tomorrowClean.setDate(tomorrowClean.getDate() + 1);
 
   // Load announcement
   useEffect(() => {
@@ -38,93 +60,60 @@ function AdminHome() {
     return () => unsubscribe();
   }, []);
 
-  // Load today's count
+  // Subscribe to real-time food selections (fetch all to avoid lexicographical comparison issues)
   useEffect(() => {
-    const loadTodayCount = async () => {
-      try {
-        const q = query(
-          collection(db, 'foodSelections'),
-          where('date', '==', todayKey)
-        );
-        const snapshot = await getDocs(q);
-        
-        let breakfast = 0;
-        let dinner = 0;
-        
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          if (data.breakfast) breakfast++;
-          if (data.dinner) dinner++;
-        });
-        
-        setTodayCount({ breakfast, dinner, total: snapshot.size });
-      } catch (error) {
-        console.error('❌ Error loading today count:', error);
+    const q = query(
+      collection(db, 'foodSelections')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map(doc => doc.data());
+      setSelections(list);
+    }, (error) => {
+      console.error('❌ Error listening to food selections:', error);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Dynamically calculate Today's Count
+  const todayCount = selections.reduce((acc, curr) => {
+    const currDate = parseDate(curr.date);
+    if (currDate) {
+      const currClean = getCleanDate(currDate);
+      if (currClean.getTime() === todayClean.getTime()) {
+        if (curr.breakfast) acc.breakfast++;
+        if (curr.dinner) acc.dinner++;
+        acc.total++;
       }
-    };
+    }
+    return acc;
+  }, { breakfast: 0, dinner: 0, total: 0 });
 
-    loadTodayCount();
-    const interval = setInterval(loadTodayCount, 30000);
-    return () => clearInterval(interval);
-  }, [todayKey]);
-
-  // Load tomorrow's count
-  useEffect(() => {
-    const loadTomorrowCount = async () => {
-      try {
-        const q = query(
-          collection(db, 'foodSelections'),
-          where('date', '==', tomorrowKey)
-        );
-        const snapshot = await getDocs(q);
-        
-        let breakfast = 0;
-        let dinner = 0;
-        
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          if (data.breakfast) breakfast++;
-          if (data.dinner) dinner++;
-        });
-        
-        setTomorrowCount({ breakfast, dinner, total: snapshot.size });
-      } catch (error) {
-        console.error('❌ Error loading tomorrow count:', error);
+  // Dynamically calculate Tomorrow's Count
+  const tomorrowCount = selections.reduce((acc, curr) => {
+    const currDate = parseDate(curr.date);
+    if (currDate) {
+      const currClean = getCleanDate(currDate);
+      if (currClean.getTime() === tomorrowClean.getTime()) {
+        if (curr.breakfast) acc.breakfast++;
+        if (curr.dinner) acc.dinner++;
+        acc.total++;
       }
-    };
+    }
+    return acc;
+  }, { breakfast: 0, dinner: 0, total: 0 });
 
-    loadTomorrowCount();
-    const interval = setInterval(loadTomorrowCount, 30000);
-    return () => clearInterval(interval);
-  }, [tomorrowKey]);
-
-  // Load upcoming count
-  useEffect(() => {
-    const loadUpcomingCount = async () => {
-      try {
-        const snapshot = await getDocs(collection(db, 'foodSelections'));
-        
-        const futureDates = new Set();
-        
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          const date = data.date;
-          
-          if (date > tomorrowKey) {
-            futureDates.add(date);
-          }
-        });
-        
-        setUpcomingCount(futureDates.size);
-      } catch (error) {
-        console.error('❌ Error loading upcoming count:', error);
+  // Dynamically calculate Advance Count (unique dates with selections > tomorrow)
+  const advanceDates = new Set();
+  selections.forEach(curr => {
+    const currDate = parseDate(curr.date);
+    if (currDate) {
+      const currClean = getCleanDate(currDate);
+      if (currClean.getTime() > tomorrowClean.getTime()) {
+        advanceDates.add(currClean.getTime());
       }
-    };
-
-    loadUpcomingCount();
-    const interval = setInterval(loadUpcomingCount, 60000);
-    return () => clearInterval(interval);
-  }, [tomorrowKey]);
+    }
+  });
+  const upcomingCount = advanceDates.size;
 
   const handleSaveAnnouncement = async () => {
     if (!announcement.trim()) {
@@ -138,6 +127,20 @@ function AdminHome() {
         createdAt: new Date(),
         updatedAt: new Date()
       });
+
+      // Dispatch notifications to all members
+      const usersSnap = await getDocs(
+        query(collection(db, 'users'), where('userType', 'in', ['pg_member', 'mess_member']))
+      );
+      for (const uDoc of usersSnap.docs) {
+        await sendNotificationToUser(
+          uDoc.id,
+          'New Announcement 📢',
+          announcement.trim(),
+          'announcements'
+        );
+      }
+
       alert('Announcement saved successfully!');
     } catch (error) {
       console.error('Error saving announcement:', error);
@@ -146,28 +149,23 @@ function AdminHome() {
   };
 
   const handleCardClick = async (type) => {
-    let dateKey;
-    if (type === 'today') dateKey = todayKey;
-    else if (type === 'tomorrow') dateKey = tomorrowKey;
-    
     try {
       if (type === 'today' || type === 'tomorrow') {
-        const q = query(
-          collection(db, 'foodSelections'),
-          where('date', '==', dateKey)
-        );
-        const snapshot = await getDocs(q);
+        const targetTime = type === 'today' ? todayClean.getTime() : tomorrowClean.getTime();
+        const filteredSelections = selections.filter(s => {
+          const sDate = parseDate(s.date);
+          return sDate && getCleanDate(sDate).getTime() === targetTime;
+        });
         
         const data = [];
-        for (const docSnap of snapshot.docs) {
-          const selection = docSnap.data();
+        for (const selection of filteredSelections) {
           // Get user details
           const userDoc = await getDocs(query(collection(db, 'users'), where('__name__', '==', selection.userId)));
           let userName = 'Unknown';
           
           if (!userDoc.empty) {
             const userData = userDoc.docs[0].data();
-            userName = userData.name || userData.username || 'Unknown';
+            userName = userData.fullName || userData.name || userData.username || 'Unknown';
           }
           
           data.push({
@@ -179,34 +177,32 @@ function AdminHome() {
         
         setModalData(data);
       } else if (type === 'upcoming') {
-        const snapshot = await getDocs(collection(db, 'foodSelections'));
-        
         const futureSelections = new Map();
         
-        snapshot.forEach((doc) => {
-          const selection = doc.data();
-          const date = selection.date;
-          
-          if (date > tomorrowKey) {
-            if (!futureSelections.has(date)) {
-              futureSelections.set(date, { breakfast: 0, dinner: 0 });
+        selections.forEach((selection) => {
+          const sDate = parseDate(selection.date);
+          if (sDate) {
+            const cleanSDate = getCleanDate(sDate);
+            const sTime = cleanSDate.getTime();
+            if (sTime > tomorrowClean.getTime()) {
+              if (!futureSelections.has(sTime)) {
+                futureSelections.set(sTime, { breakfast: 0, dinner: 0, dateObj: cleanSDate });
+              }
+              const counts = futureSelections.get(sTime);
+              if (selection.breakfast) counts.breakfast++;
+              if (selection.dinner) counts.dinner++;
             }
-            const counts = futureSelections.get(date);
-            if (selection.breakfast) counts.breakfast++;
-            if (selection.dinner) counts.dinner++;
           }
         });
         
-        const data = Array.from(futureSelections.entries()).map(([date, counts]) => {
-          const [year, month, day] = date.split('-').map(Number);
-          const dateObj = new Date(year, month - 1, day);
+        const data = Array.from(futureSelections.entries()).map(([timeKey, info]) => {
           return {
-            date: dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-            breakfast: counts.breakfast,
-            dinner: counts.dinner,
-            sortKey: date
+            date: info.dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+            breakfast: info.breakfast,
+            dinner: info.dinner,
+            sortKey: timeKey
           };
-        }).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+        }).sort((a, b) => a.sortKey - b.sortKey);
         
         setModalData(data);
       }

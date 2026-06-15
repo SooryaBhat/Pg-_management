@@ -4,7 +4,9 @@ import { uploadToSupabase } from '../supabase';
 import {
   collection, addDoc, deleteDoc, doc, query,
   orderBy, onSnapshot, serverTimestamp, limit,
+  getDocs, where
 } from 'firebase/firestore';
+import { sendNotificationToUser } from '../services/notificationService';
 import {
   SendIcon, MicIcon, StopIcon, ImageIcon, CameraIcon,
   PlayIcon, PauseIcon, CloseIcon, AttachIcon,
@@ -331,6 +333,25 @@ function Chat({ currentUser }) {
     timestamp: serverTimestamp(),
   });
 
+  const notifyOtherUsers = async (msgText, msgType) => {
+    try {
+      const usersSnap = await getDocs(
+        query(collection(db, 'users'), where('__name__', '!=', currentUser.uid))
+      );
+      const title = `${currentUser?.name || 'A member'} sent a message 💬`;
+      const body = msgType === 'text' ? msgText : `Sent a ${msgType}`;
+      
+      for (const uDoc of usersSnap.docs) {
+        const userData = uDoc.data();
+        if (userData.currentActiveTab !== 'chat') {
+          await sendNotificationToUser(uDoc.id, title, body, 'chat');
+        }
+      }
+    } catch (err) {
+      console.error('Error notifying other users:', err);
+    }
+  };
+
   // ── Upload helpers (Supabase → Firestore) ────────────────────
   const handleSendImage = async () => {
     if (!imagePreview || !currentUser || sending) return;
@@ -345,6 +366,7 @@ function Chat({ currentUser }) {
         imageUrl: url, fileName: file.name || 'image',
         ...senderMeta(),
       });
+      notifyOtherUsers(file.name || 'image', 'image');
     } catch (err) {
       console.error('Image upload error:', err);
       alert('Failed to send image: ' + err.message);
@@ -369,6 +391,7 @@ function Chat({ currentUser }) {
         audioUrl: url, duration: Math.round(preview.duration),
         ...senderMeta(),
       });
+      notifyOtherUsers('Voice message', 'audio');
     } catch (err) {
       console.error('Audio upload error:', err);
       alert('Failed to send voice message: ' + err.message);
@@ -385,6 +408,7 @@ function Chat({ currentUser }) {
     setSending(true);
     try {
       await addDoc(collection(db, 'messages'), { type: 'text', text, ...senderMeta() });
+      notifyOtherUsers(text, 'text');
     } catch (err) {
       console.error('Send error:', err);
       setMessage(text);
