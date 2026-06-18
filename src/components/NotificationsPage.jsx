@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { 
   collection, query, where, orderBy, onSnapshot, 
-  doc, updateDoc, writeBatch, getDocs, deleteDoc 
+  doc, updateDoc, writeBatch, deleteDoc 
 } from 'firebase/firestore';
 
 const CATEGORIES = [
@@ -11,7 +11,8 @@ const CATEGORIES = [
   { id: 'chat',             label: 'Chat Messages 💬' },
   { id: 'payment_reminder', label: 'Reminders ⏳' },
   { id: 'payment_status',   label: 'Payments 💳' },
-  { id: 'system',           label: 'System ⚙️' }
+  { id: 'system',           label: 'System ⚙️' },
+  { id: 'app_update',       label: "What's New 🚀" }
 ];
 
 const CATEGORY_STYLES = {
@@ -19,11 +20,15 @@ const CATEGORY_STYLES = {
   chat:             { color: '#10b981', bg: '#d1fae5', icon: '💬' },
   payment_reminder: { color: '#f59e0b', bg: '#fef3c7', icon: '⏳' },
   payment_status:   { color: '#ec4899', bg: '#fce7f3', icon: '💳' },
-  system:           { color: '#6b7280', bg: '#f3f4f6', icon: '⚙️' }
+  system:           { color: '#6b7280', bg: '#f3f4f6', icon: '⚙️' },
+  app_update:       { color: '#8b5cf6', bg: '#f5f3ff', icon: '🚀' }
 };
 
 function NotificationsPage({ currentUser }) {
   const [notifications, setNotifications] = useState([]);
+  const [appUpdates, setAppUpdates] = useState([]);
+  const [dismissedUpdates, setDismissedUpdates] = useState([]);
+  const [clearedUpdates, setClearedUpdates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('all');
 
@@ -53,32 +58,89 @@ function NotificationsPage({ currentUser }) {
     return () => unsubscribe();
   }, [currentUser?.uid]);
 
-  const handleMarkAsRead = async (notificationId) => {
-    try {
-      await updateDoc(doc(db, 'notifications', notificationId), { read: true });
-    } catch (err) {
-      console.error('Error marking notification as read:', err);
+  // Load developer active app updates
+  useEffect(() => {
+    const q = query(
+      collection(db, 'app_updates'),
+      where('active', '==', true),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setAppUpdates(snap.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
+        createdAt: d.data().createdAt?.toDate ? d.data().createdAt.toDate() : new Date(d.data().createdAt || Date.now()),
+        type: 'app_update'
+      })));
+    }, (err) => {
+      console.error('Error fetching developer app updates:', err);
+    });
+
+    // Sync localStorage dismissals and cleared items
+    const dismissed = JSON.parse(localStorage.getItem('dismissed_updates') || '[]');
+    const cleared = JSON.parse(localStorage.getItem('cleared_updates') || '[]');
+    setDismissedUpdates(dismissed);
+    setClearedUpdates(cleared);
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleMarkAsRead = async (item) => {
+    if (item.type === 'app_update') {
+      const dismissed = JSON.parse(localStorage.getItem('dismissed_updates') || '[]');
+      if (!dismissed.includes(item.id)) {
+        dismissed.push(item.id);
+        localStorage.setItem('dismissed_updates', JSON.stringify(dismissed));
+        setDismissedUpdates(dismissed);
+      }
+    } else {
+      try {
+        await updateDoc(doc(db, 'notifications', item.id), { read: true });
+      } catch (err) {
+        console.error('Error marking notification as read:', err);
+      }
     }
   };
 
-  const handleClearNotification = async (notificationId) => {
-    try {
-      await deleteDoc(doc(db, 'notifications', notificationId));
-    } catch (err) {
-      console.error('Error deleting notification:', err);
+  const handleClearNotification = async (item) => {
+    if (item.type === 'app_update') {
+      const cleared = JSON.parse(localStorage.getItem('cleared_updates') || '[]');
+      if (!cleared.includes(item.id)) {
+        cleared.push(item.id);
+        localStorage.setItem('cleared_updates', JSON.stringify(cleared));
+        setClearedUpdates(cleared);
+      }
+    } else {
+      try {
+        await deleteDoc(doc(db, 'notifications', item.id));
+      } catch (err) {
+        console.error('Error deleting notification:', err);
+      }
     }
   };
 
   const handleMarkAllRead = async () => {
     try {
+      // 1. Notifications read
       const unread = notifications.filter(n => !n.read);
-      if (unread.length === 0) return;
+      if (unread.length > 0) {
+        const batch = writeBatch(db);
+        unread.forEach(n => {
+          batch.update(doc(db, 'notifications', n.id), { read: true });
+        });
+        await batch.commit();
+      }
 
-      const batch = writeBatch(db);
-      unread.forEach(n => {
-        batch.update(doc(db, 'notifications', n.id), { read: true });
-      });
-      await batch.commit();
+      // 2. Developer updates read (dismissed)
+      const undismissed = appUpdates.filter(u => !dismissedUpdates.includes(u.id));
+      if (undismissed.length > 0) {
+        const dismissed = JSON.parse(localStorage.getItem('dismissed_updates') || '[]');
+        undismissed.forEach(u => {
+          if (!dismissed.includes(u.id)) dismissed.push(u.id);
+        });
+        localStorage.setItem('dismissed_updates', JSON.stringify(dismissed));
+        setDismissedUpdates(dismissed);
+      }
     } catch (err) {
       console.error('Error marking all as read:', err);
     }
@@ -89,17 +151,43 @@ function NotificationsPage({ currentUser }) {
     if (!confirmClear) return;
     
     try {
-      const batch = writeBatch(db);
-      notifications.forEach(n => {
-        batch.delete(doc(db, 'notifications', n.id));
+      // 1. Delete notifications
+      if (notifications.length > 0) {
+        const batch = writeBatch(db);
+        notifications.forEach(n => {
+          batch.delete(doc(db, 'notifications', n.id));
+        });
+        await batch.commit();
+      }
+
+      // 2. Clear developer updates (locally hide all active updates)
+      const cleared = JSON.parse(localStorage.getItem('cleared_updates') || '[]');
+      appUpdates.forEach(u => {
+        if (!cleared.includes(u.id)) cleared.push(u.id);
       });
-      await batch.commit();
+      localStorage.setItem('cleared_updates', JSON.stringify(cleared));
+      setClearedUpdates(cleared);
     } catch (err) {
       console.error('Error clearing all notifications:', err);
     }
   };
 
-  const filtered = notifications.filter(n => {
+  // Merge lists
+  const mergedNotifications = [
+    ...notifications,
+    ...appUpdates
+      .filter(u => !clearedUpdates.includes(u.id))
+      .map(u => ({
+        ...u,
+        title: u.version ? `Version ${u.version} - ${u.title}` : u.title,
+        read: dismissedUpdates.includes(u.id)
+      }))
+  ];
+
+  // Sort by createdAt descending
+  mergedNotifications.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  const filtered = mergedNotifications.filter(n => {
     if (activeCategory === 'all') return true;
     return n.type === activeCategory;
   });
@@ -126,7 +214,7 @@ function NotificationsPage({ currentUser }) {
           <h2 className="nt-title">Notifications</h2>
           <p className="nt-subtitle">Stay updated with PG events and alerts</p>
         </div>
-        {notifications.length > 0 && (
+        {(notifications.length > 0 || appUpdates.filter(u => !clearedUpdates.includes(u.id)).length > 0) && (
           <div className="nt-header-actions">
             <button className="nt-action-btn read" onClick={handleMarkAllRead}>
               ✓ Mark All Read
@@ -142,8 +230,10 @@ function NotificationsPage({ currentUser }) {
       <div className="nt-categories">
         {CATEGORIES.map(cat => {
           const count = cat.id === 'all' 
-            ? notifications.filter(n => !n.read).length
-            : notifications.filter(n => n.type === cat.id && !n.read).length;
+            ? notifications.filter(n => !n.read).length + appUpdates.filter(u => !dismissedUpdates.includes(u.id)).length
+            : cat.id === 'app_update'
+              ? appUpdates.filter(u => !dismissedUpdates.includes(u.id)).length
+              : notifications.filter(n => n.type === cat.id && !n.read).length;
 
           return (
             <button
@@ -205,7 +295,7 @@ function NotificationsPage({ currentUser }) {
                   {!item.read && (
                     <button 
                       className="nt-btn-read" 
-                      onClick={() => handleMarkAsRead(item.id)}
+                      onClick={() => handleMarkAsRead(item)}
                       title="Mark as read"
                     >
                       ✓
@@ -213,7 +303,7 @@ function NotificationsPage({ currentUser }) {
                   )}
                   <button 
                     className="nt-btn-clear" 
-                    onClick={() => handleClearNotification(item.id)}
+                    onClick={() => handleClearNotification(item)}
                     title="Clear notification"
                   >
                     ✕

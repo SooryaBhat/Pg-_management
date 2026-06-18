@@ -5190,3 +5190,28 @@ body {
     opacity: 1;
   }
 }
+
+
+
+/* Glassmorphism modal popup styling */
+.popup-overlay {
+  backdrop-filter: blur(8px) saturate(180%);
+  background-color: rgba(17, 24, 39, 0.4);
+}
+
+.popup-modal {
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  animation: modalScaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.popup-got-it-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.35);
+}
+
+.popup-got-it-btn:active {
+  transform: scale(0.98);
+}

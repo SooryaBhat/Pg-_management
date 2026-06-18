@@ -44,6 +44,7 @@ function App() {
   const [lastReadChat, setLastReadChat] = useState(null);
   const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [activePopup, setActivePopup] = useState(null);
 
   // Swipe Gesture Navigation
   const [touchStartX, setTouchStartX] = useState(0);
@@ -185,6 +186,40 @@ function App() {
     const unsub = onSnapshot(q, (snap) => {
       setUnreadNotificationsCount(snap.size);
     }, (err) => console.error('Notifications count listener error:', err));
+    return () => unsub();
+  }, [currentUser?.uid]);
+
+  // Real-time listener for developer app updates popup
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const q = query(
+      collection(db, 'app_updates'),
+      where('active', '==', true)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      if (list.length === 0) {
+        setActivePopup(null);
+        return;
+      }
+
+      // Sort by createdAt descending (newest first)
+      list.sort((a, b) => {
+        const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt || 0);
+        const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt || 0);
+        return bTime - aTime;
+      });
+
+      // Show the latest update if not already dismissed by user
+      const dismissed = JSON.parse(localStorage.getItem('dismissed_updates') || '[]');
+      const latest = list[0];
+      if (!dismissed.includes(latest.id)) {
+        setActivePopup(latest);
+      } else {
+        setActivePopup(null);
+      }
+    }, (err) => console.error("Popup updates query error:", err));
     return () => unsub();
   }, [currentUser?.uid]);
 
@@ -521,6 +556,51 @@ function App() {
               onClick={() => setShowProfileModal(false)}
             >
               Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Custom In-App Developer Update Popup Modal ── */}
+      {activePopup && (
+        <div className="modal-overlay popup-overlay" style={{ zIndex: 3000 }}>
+          <div className="modal popup-modal" style={{ maxWidth: '440px', padding: '28px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.2)' }}>
+            <div style={{ fontSize: '40px', marginBottom: '12px' }}>🎉</div>
+            <div className="popup-badge" style={{ display: 'inline-block', padding: '6px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', marginBottom: '16px', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#e0e7ff', color: '#4f46e5' }}>
+              What's New {activePopup.version ? `v${activePopup.version}` : ''}
+            </div>
+            
+            <h3 className="popup-title" style={{ fontSize: '20px', fontWeight: '900', color: '#111827', marginBottom: '12px', lineHeight: '1.3' }}>
+              {activePopup.title}
+            </h3>
+            
+            <p className="popup-message" style={{ fontSize: '14px', color: '#4b5563', lineHeight: '1.6', marginBottom: '28px', whiteSpace: 'pre-wrap', textAlign: 'left' }}>
+              {activePopup.message}
+            </p>
+            
+            <button
+              className="popup-got-it-btn"
+              style={{
+                width: '100%',
+                padding: '12px',
+                background: 'linear-gradient(135deg, #6366f1, #7c3aed)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)',
+                transition: 'all 0.2s'
+              }}
+              onClick={() => {
+                const dismissed = JSON.parse(localStorage.getItem('dismissed_updates') || '[]');
+                dismissed.push(activePopup.id);
+                localStorage.setItem('dismissed_updates', JSON.stringify(dismissed));
+                setActivePopup(null);
+              }}
+            >
+              Got It
             </button>
           </div>
         </div>
