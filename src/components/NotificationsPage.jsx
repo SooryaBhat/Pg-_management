@@ -34,21 +34,29 @@ function NotificationsPage({ currentUser }) {
 
   // Load user notifications in real-time
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid) {
+      console.log("[Firestore Query Blocked] Collection: 'notifications', Auth State: Unauthenticated (currentUser is null)");
+      return;
+    }
+    console.log("[Firestore Query] Collection: 'notifications', Auth State: Authenticated, User UID:", currentUser.uid);
     setLoading(true);
 
     const q = query(
       collection(db, 'notifications'),
-      where('userId', '==', currentUser.uid),
-      orderBy('createdAt', 'desc')
+      where('userId', '==', currentUser.uid)
     );
 
     const unsubscribe = onSnapshot(q, (snap) => {
-      setNotifications(snap.docs.map(d => ({
+      const list = snap.docs.map(d => ({
         id: d.id,
         ...d.data(),
         createdAt: d.data().createdAt?.toDate ? d.data().createdAt.toDate() : new Date(d.data().createdAt)
-      })));
+      }));
+      
+      // Sort in memory to avoid requiring a composite index
+      list.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      
+      setNotifications(list);
       setLoading(false);
     }, (err) => {
       console.error('Error fetching notifications:', err);
@@ -60,18 +68,28 @@ function NotificationsPage({ currentUser }) {
 
   // Load developer active app updates
   useEffect(() => {
+    if (!currentUser?.uid) {
+      console.log("[Firestore Query Blocked] Collection: 'app_updates', Auth State: Unauthenticated (currentUser is null)");
+      return;
+    }
+    console.log("[Firestore Query] Collection: 'app_updates', Auth State: Authenticated, User UID:", currentUser.uid);
+
     const q = query(
       collection(db, 'app_updates'),
-      where('active', '==', true),
-      orderBy('createdAt', 'desc')
+      where('active', '==', true)
     );
     const unsubscribe = onSnapshot(q, (snap) => {
-      setAppUpdates(snap.docs.map(d => ({
+      const list = snap.docs.map(d => ({
         id: d.id,
         ...d.data(),
         createdAt: d.data().createdAt?.toDate ? d.data().createdAt.toDate() : new Date(d.data().createdAt || Date.now()),
         type: 'app_update'
-      })));
+      }));
+
+      // Sort in memory to avoid requiring a composite index
+      list.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+      setAppUpdates(list);
     }, (err) => {
       console.error('Error fetching developer app updates:', err);
     });
@@ -83,7 +101,7 @@ function NotificationsPage({ currentUser }) {
     setClearedUpdates(cleared);
 
     return () => unsubscribe();
-  }, []);
+  }, [currentUser?.uid]);
 
   const handleMarkAsRead = async (item) => {
     if (item.type === 'app_update') {

@@ -177,7 +177,11 @@ function App() {
 
   // Listen to unread notifications count
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid) {
+      console.log("[Firestore Query Blocked] Collection: 'notifications' (unread count), Auth State: Unauthenticated (currentUser is null)");
+      return;
+    }
+    console.log("[Firestore Query] Collection: 'notifications' (unread count), Auth State: Authenticated, User UID:", currentUser.uid);
     const q = query(
       collection(db, 'notifications'),
       where('userId', '==', currentUser.uid),
@@ -191,7 +195,11 @@ function App() {
 
   // Real-time listener for developer app updates popup
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid) {
+      console.log("[Firestore Query Blocked] Collection: 'app_updates' (popup), Auth State: Unauthenticated (currentUser is null)");
+      return;
+    }
+    console.log("[Firestore Query] Collection: 'app_updates' (popup), Auth State: Authenticated, User UID:", currentUser.uid);
     const q = query(
       collection(db, 'app_updates'),
       where('active', '==', true)
@@ -226,6 +234,7 @@ function App() {
   // Auto-mark notifications as read when entering notifications tab
   useEffect(() => {
     if (activeTab === 'notifications' && currentUser?.uid) {
+      console.log("[Firestore Query] Collection: 'notifications' (mark read), Auth State: Authenticated, User UID:", currentUser.uid);
       const markAllAsRead = async () => {
         try {
           const q = query(
@@ -262,7 +271,11 @@ function App() {
 
   // Listen to messages to count unread messages
   useEffect(() => {
-    if (!currentUser?.uid || lastReadChat === null) return;
+    if (!currentUser?.uid || lastReadChat === null) {
+      console.log("[Firestore Query Blocked] Collection: 'messages' (unread count), Auth State: Unauthenticated or lastReadChat is null");
+      return;
+    }
+    console.log("[Firestore Query] Collection: 'messages' (unread count), Auth State: Authenticated, User UID:", currentUser.uid);
     const q = query(collection(db, 'messages'));
     const unsub = onSnapshot(q, (snap) => {
       let count = 0;

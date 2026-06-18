@@ -58,7 +58,7 @@ service cloud.firestore {
     // Any authenticated user can read updates (for popups and notification list)
     // Client-side writes are disabled (only manageable via Firebase Console/Admin SDK)
     match /app_updates/{docId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if false;
     }
 

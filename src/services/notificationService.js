@@ -46,8 +46,18 @@ export async function registerFCMToken(userId) {
   }
   try {
     // VAPID key is acquired from environment or defaults to common public VAPID
-    const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || 'BEl5c93pP5H7rE0Z1456nQf_p787gW307e2Z-8n8fQ0c058778c8c78';
-    const token = await getToken(messaging, { vapidKey });
+    const envVapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+    console.log("VITE_FIREBASE_VAPID_KEY value from env:", envVapidKey);
+    if (envVapidKey) {
+      console.log("VITE_FIREBASE_VAPID_KEY length:", envVapidKey.length);
+    } else {
+      console.warn("VITE_FIREBASE_VAPID_KEY is not defined in env!");
+    }
+
+    const vapidKey = envVapidKey || 'BEl5c93pP5H7rE0Z1456nQf_p787gW307e2Z-8n8fQ0c058778c8c78';
+    console.log("VAPID key being passed to getToken():", vapidKey, "Length:", vapidKey.length);
+    
+    const token = await getToken(messaging, { vapidKey: vapidKey });
     if (token) {
       console.log("FCM registration token acquired:", token);
       await updateDoc(doc(db, 'users', userId), {
