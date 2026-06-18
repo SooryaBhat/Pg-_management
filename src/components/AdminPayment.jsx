@@ -5,7 +5,7 @@ import {
   query, where, serverTimestamp,
 } from 'firebase/firestore';
 import { CloseIcon } from './Icons';
-import { sendNotificationToUser } from '../services/notificationService';
+import { sendNotificationToUser, getUserPlanForMonth } from '../services/notificationService';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const RENT_AMOUNT    = 2500;
@@ -126,9 +126,16 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
         </div>
 
         <div className="modal-body ap-detail-body">
-          {/* Role badge */}
-          <div className={`payment-type-badge ${user.userType === 'pg_member' ? 'pg' : 'mess'}`} style={{ marginBottom: '16px' }}>
-            {user.userType === 'pg_member' ? '🏠 PG Member' : '🍽 Mess Member'}
+          {/* Role & Plan badge */}
+          <div className="ap-badge-row" style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+            <div className={`payment-type-badge ${user.userType === 'pg_member' ? 'pg' : 'mess'}`}>
+              {user.userType === 'pg_member' ? '🏠 PG Member' : '🍽 Mess Member'}
+            </div>
+            {user.userType === 'pg_member' && (
+              <div className="payment-type-badge pg" style={{ background: '#f5f3ff', color: '#4f46e5', border: '1px solid #ddd6fe' }}>
+                Plan {user.activePlan}
+              </div>
+            )}
           </div>
 
           {/* Bill summary */}
@@ -138,7 +145,7 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
               <>
                 <div className="breakdown-row">
                   <div className="breakdown-label">Monthly Rent</div>
-                  <div className="breakdown-value">{fmtRupee(RENT_AMOUNT)}</div>
+                  <div className="breakdown-value">{fmtRupee(user.rent)}</div>
                 </div>
                 <div className="breakdown-separator" />
               </>
@@ -146,16 +153,25 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
             <div className="breakdown-row">
               <div className="breakdown-label">
                 Food Charges
-                <span className="breakdown-detail">
-                  Breakfast: {user.breakfast} × ₹{BREAKFAST_COST} | Dinner: {user.dinner} × ₹{DINNER_COST}
-                </span>
+                {user.userType === 'mess_member' && <span className="breakdown-detail">Flat Mess Charge</span>}
+                {user.userType === 'pg_member' && user.activePlan === 'A' && <span className="breakdown-detail">Flat Food Charge</span>}
+                {user.userType === 'pg_member' && user.activePlan === 'B' && <span className="breakdown-detail">No Food Plan</span>}
+                {user.userType === 'pg_member' && user.activePlan === 'C' && (
+                  <span className="breakdown-detail">
+                    Breakfast: {user.breakfast} × ₹{BREAKFAST_COST} | Dinner: {user.dinner} × ₹{DINNER_COST}
+                  </span>
+                )}
               </div>
               <div className="breakdown-value">{fmtRupee(user.foodCost)}</div>
             </div>
-            <div className="breakdown-meals">
-              <div className="meal-count"><span className="meal-icon">🍳</span> Breakfast: {user.breakfast} days</div>
-              <div className="meal-count"><span className="meal-icon">🍽️</span> Dinner: {user.dinner} days</div>
-            </div>
+            
+            {user.userType === 'pg_member' && user.activePlan === 'C' && (
+              <div className="breakdown-meals">
+                <div className="meal-count"><span className="meal-icon">🍳</span> Breakfast: {user.breakfast} days</div>
+                <div className="meal-count"><span className="meal-icon">🍽️</span> Dinner: {user.dinner} days</div>
+              </div>
+            )}
+            
             <div className="breakdown-separator" />
             <div className="breakdown-row breakdown-total">
               <div className="breakdown-label">Total Due</div>
@@ -285,7 +301,7 @@ function UserCard({ user, onClick }) {
       <div className="ap-user-info">
         <div className="ap-user-name">{user.displayName}</div>
         <div className="ap-user-sub">
-          @{user.username || '—'} &nbsp;·&nbsp; {user.foodDays} food day{user.foodDays !== 1 ? 's' : ''}
+          @{user.username || '—'} &nbsp;·&nbsp; {user.userType === 'pg_member' ? `Plan ${user.activePlan}` : 'Mess (Flat)'} &nbsp;·&nbsp; {user.foodDays} food day{user.foodDays !== 1 ? 's' : ''}
         </div>
         {user.payment?.utr && (
           <div className="ap-user-sub-detail">UTR: {user.payment.utr}</div>
@@ -327,11 +343,12 @@ function GroupSection({ label, users, onUserClick, color }) {
 
 // ─── CSV Export ───────────────────────────────────────────────────────────────
 function exportCSV(users, monthLabel) {
-  const headers = ['Name','Username','Role','Food Days','Breakfast','Dinner','Rent (₹)','Food Cost (₹)','Total (₹)','UTR','Payment Status'];
+  const headers = ['Name','Username','Role','Selected Plan','Food Days','Breakfast','Dinner','Rent (₹)','Food Cost (₹)','Total (₹)','UTR','Payment Status'];
   const rows = users.map(u => [
     u.displayName,
     u.username || '',
     u.userType === 'pg_member' ? 'PG Member' : 'Mess Member',
+    u.userType === 'pg_member' ? `Plan ${u.activePlan}` : 'Mess (Flat)',
     u.foodDays,
     u.breakfast,
     u.dinner,
@@ -413,16 +430,42 @@ function AdminPayment() {
         const breakfast = sels.filter(s => s.breakfast).length;
         const dinner    = sels.filter(s => s.dinner).length;
         const foodDays  = sels.filter(s => s.breakfast || s.dinner).length;
-        const foodCost  = (breakfast * BREAKFAST_COST) + (dinner * DINNER_COST);
-        const rent      = u.userType === 'pg_member' ? RENT_AMOUNT : 0;
-        const total     = rent + foodCost;
+
+        let rent = 0;
+        let foodCost = 0;
+        let total = 0;
+        let activePlan = 'A';
+
+        if (u.userType === 'mess_member') {
+          rent = 0;
+          foodCost = 3200;
+          total = 3200;
+          activePlan = 'Mess (Flat)';
+        } else {
+          // pg_member
+          activePlan = getUserPlanForMonth(u.monthlyPlans, key);
+          if (activePlan === 'A') {
+            rent = 2500;
+            foodCost = 3200;
+            total = 5700;
+          } else if (activePlan === 'B') {
+            rent = 3000;
+            foodCost = 0;
+            total = 3000;
+          } else { // Plan C
+            rent = 2500;
+            foodCost = (breakfast * BREAKFAST_COST) + (dinner * DINNER_COST);
+            total = rent + foodCost;
+          }
+        }
+
         const payment   = paymentByUser[u.uid] || null;
         const paymentStatus = payment?.verificationStatus || 'pending';
 
         return {
           ...u,
           displayName:   u.fullName || u.name || u.username || 'Unknown',
-          breakfast, dinner, foodDays, foodCost, rent, total,
+          breakfast, dinner, foodDays, foodCost, rent, total, activePlan,
           payment,       // full payment object (or null)
           paymentStatus, // 'paid' | 'pending_review' | 'rejected' | 'pending'
           selections:    sels,

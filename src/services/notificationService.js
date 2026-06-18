@@ -153,6 +153,30 @@ export async function sendNotificationToUser(userId, title, message, type) {
 }
 
 /**
+ * Utility to resolve user monthly billing plan with historical auto-continuation.
+ * Default is Plan A.
+ */
+export function getUserPlanForMonth(monthlyPlans, targetMonthKey) {
+  if (!monthlyPlans || typeof monthlyPlans !== 'object') {
+    return 'A';
+  }
+  if (monthlyPlans[targetMonthKey]) {
+    return monthlyPlans[targetMonthKey];
+  }
+  // Find the closest configured month chronologically <= targetMonthKey
+  const keys = Object.keys(monthlyPlans).sort();
+  let resolved = 'A';
+  for (const k of keys) {
+    if (k <= targetMonthKey) {
+      resolved = monthlyPlans[k];
+    } else {
+      break;
+    }
+  }
+  return resolved;
+}
+
+/**
  * Checks and triggers payment reminders if current day >= 28th and lastSentDate !== today.
  */
 export async function runPaymentReminderCheck() {
@@ -214,13 +238,26 @@ export async function runPaymentReminderCheck() {
       const status = payment?.verificationStatus || 'pending';
 
       if (status !== 'paid') {
-        const sels = foodByUser[member.uid] || [];
-        const foodDays = sels.filter(s => s.breakfast || s.dinner).length;
-        const foodCost = foodDays * 65;
-        const rent = member.userType === 'pg_member' ? 2500 : 0;
-        const total = rent + foodCost;
+        let total = 0;
+        if (member.userType === 'mess_member') {
+          total = 3200;
+        } else {
+          // pg_member plan calculation
+          const activePlan = getUserPlanForMonth(member.monthlyPlans, monthKey);
+          if (activePlan === 'A') {
+            total = 5700;
+          } else if (activePlan === 'B') {
+            total = 3000;
+          } else { // Plan C
+            const sels = foodByUser[member.uid] || [];
+            const breakfastCount = sels.filter(s => s.breakfast).length;
+            const dinnerCount = sels.filter(s => s.dinner).length;
+            const foodCost = (breakfastCount * 35) + (dinnerCount * 40);
+            total = 2500 + foodCost;
+          }
+        }
 
-        const title = 'Payment Pending Reminder ⏳';
+        const title = 'Sri Sai PG: Payment Pending ⏳';
         const message = `Your PG payment of ₹${total} is pending.`;
         
         await sendNotificationToUser(member.uid, title, message, 'payment_reminder');
@@ -230,3 +267,4 @@ export async function runPaymentReminderCheck() {
     console.error('Error running daily payment reminders check:', err);
   }
 }
+

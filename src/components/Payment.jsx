@@ -6,6 +6,7 @@ import {
   collection, query, where, serverTimestamp,
 } from 'firebase/firestore';
 import { RupeeIcon, CalendarIcon, ImageIcon, CloseIcon } from './Icons';
+import { getUserPlanForMonth } from '../services/notificationService';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const RENT_AMOUNT    = 2500;
@@ -53,13 +54,21 @@ function Payment({ userType, currentUser }) {
   const currentMonth = now.getMonth();
   const monthKey     = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
 
+  const nextMonthDate = new Date(currentYear, currentMonth + 1, 1);
+  const nextMonthKey  = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
+  const nextMonthLabel = nextMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const isLocked      = now.getDate() > 25;
+
   // ── Billing state ──────────────────────────────────────────────────────────
   const [loading,     setLoading]     = useState(true);
   const [monthlyData, setMonthlyData] = useState({
     month: '', rent: isMess ? 0 : RENT_AMOUNT,
     foodDays: 0, foodCost: 0, total: isMess ? 0 : RENT_AMOUNT,
-    breakfastCount: 0, dinnerCount: 0,
+    breakfastCount: 0, dinnerCount: 0, activePlan: 'A'
   });
+
+  const [userPlans,   setUserPlans]   = useState({});
+  const [planSaving,  setPlanSaving]  = useState(false);
 
   // ── Payment state ──────────────────────────────────────────────────────────
   const [existingPayment, setExistingPayment] = useState(null); // from 'payments' collection
@@ -83,37 +92,87 @@ function Payment({ userType, currentUser }) {
     if (!auth.currentUser) { setLoading(false); return; }
     setLoading(true);
     try {
-      const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-      let totalBreakfast = 0, totalDinner = 0, daysWithFood = 0;
-
-      for (let day = 1; day <= daysInMonth; day++) {
-        const dateKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        try {
-          const snap = await getDoc(doc(db, 'foodSelections', `${auth.currentUser.uid}_${dateKey}`));
-          if (snap.exists()) {
-            const d = snap.data();
-            if (d.breakfast) totalBreakfast++;
-            if (d.dinner)    totalDinner++;
-            if (d.breakfast || d.dinner) daysWithFood++;
-          }
-        } catch { /* skip */ }
+      // Fetch user's monthlyPlans
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      const userSnap = await getDoc(userRef);
+      let plans = {};
+      if (userSnap.exists()) {
+        plans = userSnap.data().monthlyPlans || {};
       }
+      setUserPlans(plans);
 
-      const foodCost    = (totalBreakfast * BREAKFAST_COST) + (totalDinner * DINNER_COST);
-      const rent        = isMess ? 0 : RENT_AMOUNT;
-      const totalAmount = rent + foodCost;
+      const activePlan = getUserPlanForMonth(plans, monthKey);
+
+      let rent = 0;
+      let foodCost = 0;
+      let totalAmount = 0;
+      let totalBreakfast = 0;
+      let totalDinner = 0;
+      let daysWithFood = 0;
+
+      if (isMess) {
+        rent = 0;
+        foodCost = 3200;
+        totalAmount = 3200;
+      } else {
+        if (activePlan === 'A') {
+          rent = 2500;
+          foodCost = 3200;
+          totalAmount = 5700;
+        } else if (activePlan === 'B') {
+          rent = 3000;
+          foodCost = 0;
+          totalAmount = 3000;
+        } else { // Plan C
+          rent = 2500;
+          const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+          for (let day = 1; day <= daysInMonth; day++) {
+            const dateKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            try {
+              const snap = await getDoc(doc(db, 'foodSelections', `${auth.currentUser.uid}_${dateKey}`));
+              if (snap.exists()) {
+                const d = snap.data();
+                if (d.breakfast) totalBreakfast++;
+                if (d.dinner)    totalDinner++;
+                if (d.breakfast || d.dinner) daysWithFood++;
+              }
+            } catch { /* skip */ }
+          }
+          foodCost = (totalBreakfast * BREAKFAST_COST) + (totalDinner * DINNER_COST);
+          totalAmount = rent + foodCost;
+        }
+      }
 
       setMonthlyData({
         month:          now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-        rent, foodDays: daysWithFood, foodCost,
-        total: totalAmount,
+        rent,
+        foodDays:       daysWithFood,
+        foodCost,
+        total:          totalAmount,
         breakfastCount: totalBreakfast,
         dinnerCount:    totalDinner,
+        activePlan,
       });
     } catch (err) {
       console.error('Billing error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSavePlan = async (chosenPlan) => {
+    if (isLocked) return;
+    setPlanSaving(true);
+    try {
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      const updatedPlans = { ...userPlans, [nextMonthKey]: chosenPlan };
+      await setDoc(userRef, { monthlyPlans: updatedPlans }, { merge: true });
+      setUserPlans(updatedPlans);
+    } catch (err) {
+      console.error('Save plan error:', err);
+      alert('Failed to save plan: ' + err.message);
+    } finally {
+      setPlanSaving(false);
     }
   };
 
@@ -258,38 +317,117 @@ function Payment({ userType, currentUser }) {
         <div className="summary-card total-paid">
           <div className="summary-icon"><CalendarIcon /></div>
           <div className="summary-content">
-            <div className="summary-label">Food Days</div>
-            <div className="summary-amount">{monthlyData.foodDays}</div>
+            <div className="summary-label">Food Plan</div>
+            <div className="summary-amount">
+              {isMess ? 'Flat' : (monthlyData.activePlan === 'A' ? 'Flat' : (monthlyData.activePlan === 'B' ? 'None' : monthlyData.foodDays))}
+            </div>
           </div>
         </div>
       </div>
 
+      {/* Plan selection card for PG Members */}
+      {!isMess && (
+        <div className="my-plan-card">
+          <h3 className="plan-title">My Membership Plan</h3>
+          <p className="plan-subtitle">Manage your billing plan selection</p>
+          
+          <div className="plan-status-row">
+            <span className="plan-status-label">Current Plan ({monthlyData.month})</span>
+            <span className="plan-status-value">Plan {monthlyData.activePlan}</span>
+          </div>
+
+          <div style={{ marginTop: '16px' }}>
+            <div className="plan-status-label" style={{ fontWeight: '600', marginBottom: '8px' }}>
+              Next Month Plan ({nextMonthLabel})
+            </div>
+
+            {isLocked ? (
+              <>
+                <div className="plan-status-row" style={{ borderBottom: 'none' }}>
+                  <span className="plan-status-label" style={{ color: '#b45309' }}>Confirmed Selection</span>
+                  <span className="plan-status-value">Plan {userPlans[nextMonthKey] || monthlyData.activePlan}</span>
+                </div>
+                <div className="plan-lock-badge">
+                  <span>🔒</span>
+                  <span>Plan selection is locked for {nextMonthLabel}. Changes are not permitted after the 25th of the month.</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="plan-options-grid">
+                  <div 
+                    className={`plan-option-item ${(userPlans[nextMonthKey] || monthlyData.activePlan) === 'A' ? 'selected' : ''}`}
+                    onClick={() => handleSavePlan('A')}
+                  >
+                    <div className="plan-option-header">
+                      <span className="plan-option-name">Plan A</span>
+                      <span className="plan-option-cost">₹5,700/mo</span>
+                    </div>
+                    <span className="plan-option-desc">Rent + Food inclusive (Flat rate)</span>
+                  </div>
+
+                  <div 
+                    className={`plan-option-item ${(userPlans[nextMonthKey] || monthlyData.activePlan) === 'B' ? 'selected' : ''}`}
+                    onClick={() => handleSavePlan('B')}
+                  >
+                    <div className="plan-option-header">
+                      <span className="plan-option-name">Plan B</span>
+                      <span className="plan-option-cost">₹3,000/mo</span>
+                    </div>
+                    <span className="plan-option-desc">Rent Only (No food included)</span>
+                  </div>
+
+                  <div 
+                    className={`plan-option-item ${(userPlans[nextMonthKey] || monthlyData.activePlan) === 'C' ? 'selected' : ''}`}
+                    onClick={() => handleSavePlan('C')}
+                  >
+                    <div className="plan-option-header">
+                      <span className="plan-option-name">Plan C</span>
+                      <span className="plan-option-cost">₹2,500/mo + meals</span>
+                    </div>
+                    <span className="plan-option-desc">Rent + variable meals (Breakfast ₹35, Dinner ₹40 per day)</span>
+                  </div>
+                </div>
+                {planSaving && <div className="plan-saving-indicator">Saving selection...</div>}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Bill Breakdown */}
       <div className="payment-breakdown-card">
-        <h3 className="breakdown-title">Bill Breakdown</h3>
+        <h3 className="breakdown-title">Bill Breakdown {isMess ? '' : `— Plan ${monthlyData.activePlan}`}</h3>
         <div className="breakdown-row">
           <div className="breakdown-label">
             Monthly Rent
             {isMess && <span className="breakdown-na-badge">N/A</span>}
           </div>
           <div className={`breakdown-value ${isMess ? 'na-value' : ''}`}>
-            {isMess ? '₹0' : `₹${RENT_AMOUNT}`}
+            {isMess ? '₹0' : `₹${monthlyData.rent}`}
           </div>
         </div>
         <div className="breakdown-separator" />
         <div className="breakdown-row">
           <div className="breakdown-label">
             Food Charges
-            <span className="breakdown-detail">
-              Breakfast: {monthlyData.breakfastCount} × ₹{BREAKFAST_COST} | Dinner: {monthlyData.dinnerCount} × ₹{DINNER_COST}
-            </span>
+            {isMess && <span className="breakdown-detail">Flat Mess Charge</span>}
+            {!isMess && monthlyData.activePlan === 'A' && <span className="breakdown-detail">Flat Food Charge</span>}
+            {!isMess && monthlyData.activePlan === 'B' && <span className="breakdown-detail">No Food Plan</span>}
+            {!isMess && monthlyData.activePlan === 'C' && (
+              <span className="breakdown-detail">
+                Breakfast: {monthlyData.breakfastCount} × ₹{BREAKFAST_COST} | Dinner: {monthlyData.dinnerCount} × ₹{DINNER_COST}
+              </span>
+            )}
           </div>
           <div className="breakdown-value">₹{monthlyData.foodCost}</div>
         </div>
-        <div className="breakdown-meals">
-          <div className="meal-count"><span className="meal-icon">🍳</span><span>Breakfast: {monthlyData.breakfastCount} days</span></div>
-          <div className="meal-count"><span className="meal-icon">🍽️</span><span>Dinner: {monthlyData.dinnerCount} days</span></div>
-        </div>
+        {!isMess && monthlyData.activePlan === 'C' && (
+          <div className="breakdown-meals">
+            <div className="meal-count"><span className="meal-icon">🍳</span><span>Breakfast: {monthlyData.breakfastCount} days</span></div>
+            <div className="meal-count"><span className="meal-icon">🍽️</span><span>Dinner: {monthlyData.dinnerCount} days</span></div>
+          </div>
+        )}
         <div className="breakdown-separator" />
         <div className="breakdown-row breakdown-total">
           <div className="breakdown-label">Total Amount</div>
@@ -470,8 +608,12 @@ function Payment({ userType, currentUser }) {
             <div className="info-icon">ℹ️</div>
             <div className="info-text">
               {isMess
-                ? `Breakfast ₹${BREAKFAST_COST}, Dinner ₹${DINNER_COST}. Mess Members: food charges only.`
-                : `Rent ₹2,500 + Breakfast ₹${BREAKFAST_COST}, Dinner ₹${DINNER_COST}. After paying, enter UTR & upload screenshot.`}
+                ? `Flat Mess Charge: ₹3,200/month.`
+                : monthlyData.activePlan === 'A'
+                ? `Plan A: Flat Rent + Food charge of ₹5,700/month.`
+                : monthlyData.activePlan === 'B'
+                ? `Plan B: Flat Rent Only charge of ₹3,000/month.`
+                : `Plan C: Rent ₹2,500/month + Breakfast (₹${BREAKFAST_COST}) and Dinner (₹${DINNER_COST}) per day.`}
             </div>
           </div>
         </div>

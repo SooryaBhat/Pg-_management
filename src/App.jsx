@@ -367,7 +367,7 @@ function App() {
       {/* ── Top Header Bar ── */}
       <div className="top-header no-print">
         <div className="top-header-brand">
-          Nanda Gokula
+          Sri Sai PG
         </div>
         <div className="top-header-actions">
           {/* Bell Icon button */}

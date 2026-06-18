@@ -1,7 +1,7 @@
 {
-  "name": "Nanda Gokula PG Manager",
-  "short_name": "Nanda Gokula PG",
-  "description": "Food and rent management for Nanda Gokula PG",
+  "name": "Sri Sai PG Manager",
+  "short_name": "Sri Sai PG",
+  "description": "Food and rent management for Sri Sai PG",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FFD700",
