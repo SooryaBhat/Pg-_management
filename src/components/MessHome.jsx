@@ -6,28 +6,36 @@ import { doc, setDoc, getDoc, onSnapshot, collection, query, where, getDocs } fr
 // Mess Members: food polling only — no rent, no PG-specific features
 
 function MessHome() {
-  const [breakfast,      setBreakfast]      = useState(false);
-  const [dinner,         setDinner]         = useState(false);
-  const [selectedDates,  setSelectedDates]  = useState({});
-  const [currentMonth,   setCurrentMonth]   = useState(new Date());
-  const [showModal,      setShowModal]      = useState(null);
-  const [showVotersModal,setShowVotersModal]= useState(false);
-  const [todayVoters,    setTodayVoters]    = useState({ breakfast: [], dinner: [] });
-  const [announcement,   setAnnouncement]   = useState('');
-  const [loading,        setLoading]        = useState(false);
-  const [votersLoading,  setVotersLoading]  = useState(false);
+  const [breakfast, setBreakfast] = useState(false);
+  const [lunch, setLunch] = useState(false);
+  const [dinner, setDinner] = useState(false);
+  const [selectedDates, setSelectedDates] = useState({});
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [showModal, setShowModal] = useState(null);
+  const [showVotersModal, setShowVotersModal] = useState(false);
+  const [todayVoters, setTodayVoters] = useState({ breakfast: [], lunch: [], dinner: [] });
+  const [modalMeals, setModalMeals] = useState({ breakfast: false, lunch: false, dinner: false });
+  const [announcement, setAnnouncement] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [votersLoading, setVotersLoading] = useState(false);
 
-  const today       = new Date();
+  const today = new Date();
   const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-  const firstDay    = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
-  const monthName   = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  const todayDate   = today.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
+  const monthName = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const todayDate = today.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
 
   const formatDateKey = (date) => {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
+  };
+
+  const parseDate = (dateStr) => {
+    if (!dateStr) return null;
+    const [year, month, day] = dateStr.split('-');
+    return new Date(Number(year), Number(month) - 1, Number(day));
   };
 
   const todayKey = formatDateKey(today);
@@ -47,10 +55,13 @@ function MessHome() {
       doc(db, 'foodSelections', `${auth.currentUser.uid}_${todayKey}`),
       (snap) => {
         if (snap.exists()) {
-          setBreakfast(snap.data().breakfast || false);
-          setDinner(snap.data().dinner || false);
+          const data = snap.data();
+          setBreakfast(data.breakfast || false);
+          setLunch(data.lunch || false);
+          setDinner(data.dinner || false);
         } else {
           setBreakfast(false);
+          setLunch(false);
           setDinner(false);
         }
       }
@@ -60,67 +71,95 @@ function MessHome() {
 
   // Load advance selections for current month
   useEffect(() => {
-    const load = async () => {
+    const loadAdvanceSelections = async () => {
       if (!auth.currentUser) return;
-      const uid      = auth.currentUser.uid;
-      const year     = currentMonth.getFullYear();
-      const month    = currentMonth.getMonth();
-      const days     = new Date(year, month + 1, 0).getDate();
-      const result   = {};
-      for (let d = 1; d <= days; d++) {
-        const dk = formatDateKey(new Date(year, month, d));
-        const snap = await getDoc(doc(db, 'foodSelections', `${uid}_${dk}`));
-        if (snap.exists()) {
-          const { breakfast: b, dinner: d2 } = snap.data();
-          if (b && d2) result[dk] = 'both';
-          else if (b)  result[dk] = 'breakfast';
-          else if (d2) result[dk] = 'dinner';
+      try {
+        const uid = auth.currentUser.uid;
+        const selections = {};
+        const year = currentMonth.getFullYear();
+        const month = currentMonth.getMonth();
+        const days = new Date(year, month + 1, 0).getDate();
+        
+        for (let d = 1; d <= days; d++) {
+          const date = new Date(year, month, d);
+          const dk = formatDateKey(date);
+          const snap = await getDoc(doc(db, 'foodSelections', `${uid}_${dk}`));
+          if (snap.exists()) {
+            const data = snap.data();
+            selections[dk] = {
+              breakfast: data.breakfast || false,
+              lunch: data.lunch || false,
+              dinner: data.dinner || false
+            };
+          }
         }
+        setSelectedDates(selections);
+      } catch (err) {
+        console.error('Error loading advance selections:', err);
       }
-      setSelectedDates(result);
     };
-    load();
+    loadAdvanceSelections();
   }, [currentMonth]);
 
   // Save today's selection
-  const saveTodaySelection = async (isBreakfast, value) => {
+  const saveTodaySelection = async (mealType, value) => {
     if (!auth.currentUser) return;
     setLoading(true);
     try {
-      const nb = isBreakfast ? value : breakfast;
-      const nd = !isBreakfast ? value : dinner;
+      const nb = mealType === 'breakfast' ? value : breakfast;
+      const nl = mealType === 'lunch' ? value : lunch;
+      const nd = mealType === 'dinner' ? value : dinner;
       await setDoc(
         doc(db, 'foodSelections', `${auth.currentUser.uid}_${todayKey}`),
-        { userId: auth.currentUser.uid, date: todayKey, breakfast: nb, dinner: nd, timestamp: new Date() },
+        {
+          userId: auth.currentUser.uid,
+          date: todayKey,
+          breakfast: nb,
+          lunch: nl,
+          dinner: nd,
+          timestamp: new Date()
+        },
         { merge: true }
       );
     } catch (err) {
       alert('Failed to save: ' + err.message);
-      if (isBreakfast) setBreakfast(!value);
-      else setDinner(!value);
+      if (mealType === 'breakfast') setBreakfast(!value);
+      else if (mealType === 'lunch') setLunch(!value);
+      else if (mealType === 'dinner') setDinner(!value);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleBreakfastToggle = () => { const v = !breakfast; setBreakfast(v); saveTodaySelection(true, v); };
-  const handleDinnerToggle    = () => { const v = !dinner;    setDinner(v);    saveTodaySelection(false, v); };
+  const handleBreakfastToggle = () => { const v = !breakfast; setBreakfast(v); saveTodaySelection('breakfast', v); };
+  const handleLunchToggle     = () => { const v = !lunch;     setLunch(v);     saveTodaySelection('lunch', v); };
+  const handleDinnerToggle    = () => { const v = !dinner;    setDinner(v);    saveTodaySelection('dinner', v); };
+
+  const handleDateClick = (dateKey) => {
+    const currentSel = selectedDates[dateKey] || { breakfast: false, lunch: false, dinner: false };
+    setModalMeals({ ...currentSel });
+    setShowModal(dateKey);
+  };
 
   // Save advance selection
-  const handleSelection = async (type) => {
+  const handleSaveAdvanceSelection = async () => {
     if (!auth.currentUser) return;
     try {
-      const b = type === 'both' || type === 'breakfast';
-      const d = type === 'both' || type === 'dinner';
       await setDoc(
         doc(db, 'foodSelections', `${auth.currentUser.uid}_${showModal}`),
-        { userId: auth.currentUser.uid, date: showModal, breakfast: b || false, dinner: d || false, timestamp: new Date() }
+        {
+          userId: auth.currentUser.uid,
+          date: showModal,
+          breakfast: modalMeals.breakfast,
+          lunch: modalMeals.lunch,
+          dinner: modalMeals.dinner,
+          timestamp: new Date()
+        }
       );
-      if (!type) {
-        const nd = { ...selectedDates }; delete nd[showModal]; setSelectedDates(nd);
-      } else {
-        setSelectedDates({ ...selectedDates, [showModal]: type });
-      }
+      setSelectedDates(prev => ({
+        ...prev,
+        [showModal]: { ...modalMeals }
+      }));
     } catch (err) {
       alert('Failed to save: ' + err.message);
     }
@@ -132,15 +171,17 @@ function MessHome() {
     setVotersLoading(true);
     try {
       const snap = await getDocs(query(collection(db, 'foodSelections'), where('date', '==', todayKey)));
-      const bVoters = [], dVoters = [];
+      const bVoters = [], lVoters = [], dVoters = [];
       for (const s of snap.docs) {
         const sel  = s.data();
         const uDoc = await getDoc(doc(db, 'users', sel.userId));
         const name = uDoc.exists() ? (uDoc.data().fullName || uDoc.data().name || 'Unknown') : 'Unknown';
-        if (sel.breakfast) bVoters.push({ name });
-        if (sel.dinner)    dVoters.push({ name });
+        const voterInfo = { name };
+        if (sel.breakfast) bVoters.push(voterInfo);
+        if (sel.lunch)     lVoters.push(voterInfo);
+        if (sel.dinner)    dVoters.push(voterInfo);
       }
-      setTodayVoters({ breakfast: bVoters, dinner: dVoters });
+      setTodayVoters({ breakfast: bVoters, lunch: lVoters, dinner: dVoters });
       setShowVotersModal(true);
     } catch { alert('Failed to load voters'); }
     finally { setVotersLoading(false); }
@@ -152,18 +193,30 @@ function MessHome() {
     ['S','M','T','W','T','F','S'].forEach(d => cells.push(<div key={`h-${d}`} className="calendar-day">{d}</div>));
     for (let i = 0; i < firstDay; i++) cells.push(<div key={`e-${i}`} className="calendar-date empty" />);
     for (let date = 1; date <= daysInMonth; date++) {
-      const dk  = formatDateKey(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), date));
-      const sel = selectedDates[dk];
+      const dateObj = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), date);
+      const dk = formatDateKey(dateObj);
+      const selection = selectedDates[dk];
       const isTd = date === today.getDate() && currentMonth.getMonth() === today.getMonth() && currentMonth.getFullYear() === today.getFullYear();
+      
+      const hasBreakfast = selection && selection.breakfast;
+      const hasLunch = selection && selection.lunch;
+      const hasDinner = selection && selection.dinner;
+      const hasAnySelection = hasBreakfast || hasLunch || hasDinner;
+
       let cls = 'calendar-date';
-      if (sel === 'both')      cls += ' selected-both';
-      else if (sel === 'breakfast') cls += ' selected-breakfast';
-      else if (sel === 'dinner')    cls += ' selected-dinner';
+      if (hasAnySelection) cls += ' selected-any';
       if (isTd) cls += ' today';
+      
       cells.push(
-        <div key={date} className={cls} onClick={() => setShowModal(dk)}>
+        <div key={date} className={cls} onClick={() => handleDateClick(dk)}>
           <span>{date}</span>
-          {sel && <div className="date-indicators"><div className="date-dot" />{sel === 'both' && <div className="date-dot" />}</div>}
+          {selection && hasAnySelection && (
+            <div className="date-indicators">
+              {hasBreakfast && <div className="date-dot breakfast" title="Breakfast"></div>}
+              {hasLunch && <div className="date-dot lunch" title="Lunch"></div>}
+              {hasDinner && <div className="date-dot dinner" title="Dinner"></div>}
+            </div>
+          )}
         </div>
       );
     }
@@ -199,15 +252,25 @@ function MessHome() {
           </div>
         </div>
         <div className="toggle-row">
+          <span className="toggle-label">Lunch</span>
+          <div className={`toggle-switch ${lunch ? 'active' : ''}`} onClick={handleLunchToggle}>
+            <div className="toggle-slider" />
+          </div>
+        </div>
+        <div className="toggle-row">
           <span className="toggle-label">Dinner</span>
           <div className={`toggle-switch ${dinner ? 'active' : ''}`} onClick={handleDinnerToggle}>
             <div className="toggle-slider" />
           </div>
         </div>
         <div className="status-message">
-          {breakfast && dinner ? 'Breakfast & dinner selected' :
-           breakfast ? 'Breakfast selected' :
-           dinner    ? 'Dinner selected' :
+          {breakfast && lunch && dinner ? 'You have selected all meals for today' :
+           breakfast && dinner ? 'You have selected breakfast and dinner for today' :
+           breakfast && lunch ? 'You have selected breakfast and lunch for today' :
+           lunch && dinner ? 'You have selected lunch and dinner for today' :
+           breakfast ? 'You have selected breakfast for today' :
+           lunch ? 'You have selected lunch for today' :
+           dinner ? 'You have selected dinner for today' :
            'No meals selected for today'}
         </div>
 
@@ -240,19 +303,63 @@ function MessHome() {
       {/* Date selection modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
             <div className="modal-header">
               <h3 className="modal-title">Select Meals</h3>
               <button className="modal-close" onClick={() => setShowModal(null)}><CloseIcon /></button>
             </div>
             <div className="modal-body">
-              <div className="selection-options">
-                {['both','breakfast','dinner',null].map((opt) => (
-                  <div key={String(opt)} className="selection-option" onClick={() => handleSelection(opt)}>
-                    {opt === 'both' ? 'Both (Breakfast & Dinner)' : opt === 'breakfast' ? 'Breakfast Only' : opt === 'dinner' ? 'Dinner Only' : 'None'}
+              <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '16px' }}>
+                Toggle selections for {parseDate(showModal)?.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+              
+              <div className="selection-options" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div className="toggle-row" style={{ padding: '4px 0' }}>
+                  <span className="toggle-label" style={{ fontSize: '15px', fontWeight: '500' }}>Breakfast</span>
+                  <div 
+                    className={`toggle-switch ${modalMeals.breakfast ? 'active' : ''}`}
+                    onClick={() => setModalMeals(prev => ({ ...prev, breakfast: !prev.breakfast }))}
+                  >
+                    <div className="toggle-slider"></div>
                   </div>
-                ))}
-                <button className="cancel-btn" onClick={() => setShowModal(null)}>Cancel</button>
+                </div>
+
+                <div className="toggle-row" style={{ padding: '4px 0' }}>
+                  <span className="toggle-label" style={{ fontSize: '15px', fontWeight: '500' }}>Lunch</span>
+                  <div 
+                    className={`toggle-switch ${modalMeals.lunch ? 'active' : ''}`}
+                    onClick={() => setModalMeals(prev => ({ ...prev, lunch: !prev.lunch }))}
+                  >
+                    <div className="toggle-slider"></div>
+                  </div>
+                </div>
+
+                <div className="toggle-row" style={{ padding: '4px 0' }}>
+                  <span className="toggle-label" style={{ fontSize: '15px', fontWeight: '500' }}>Dinner</span>
+                  <div 
+                    className={`toggle-switch ${modalMeals.dinner ? 'active' : ''}`}
+                    onClick={() => setModalMeals(prev => ({ ...prev, dinner: !prev.dinner }))}
+                  >
+                    <div className="toggle-slider"></div>
+                  </div>
+                </div>
+                
+                <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                  <button 
+                    className="pay-submit-btn" 
+                    onClick={handleSaveAdvanceSelection}
+                    style={{ margin: 0, flex: 1 }}
+                  >
+                    Save
+                  </button>
+                  <button 
+                    className="cancel-btn" 
+                    onClick={() => setShowModal(null)}
+                    style={{ margin: 0, flex: 1 }}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -267,19 +374,110 @@ function MessHome() {
               <h3 className="modal-title">Today's Voters</h3>
               <button className="modal-close" onClick={() => setShowVotersModal(false)}><CloseIcon /></button>
             </div>
-            <div className="modal-body">
-              {[['🌅 Breakfast', todayVoters.breakfast], ['🌙 Dinner', todayVoters.dinner]].map(([label, voters]) => (
-                <div key={label} style={{ marginBottom: '20px' }}>
-                  <div style={{ fontSize:'16px', fontWeight:'600', marginBottom:'12px', color:'#111827' }}>
-                    {label} ({voters.length})
-                  </div>
-                  {voters.length > 0
-                    ? <div className="selection-list">{voters.map((v, i) => <div key={i} className="selection-item"><div className="selection-name">{v.name}</div></div>)}</div>
-                    : <div style={{ padding:'12px', background:'#f9fafb', borderRadius:'8px', fontSize:'14px', color:'#6b7280' }}>No votes yet</div>
-                  }
+            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              {/* Breakfast Voters */}
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ 
+                  fontSize: '16px', 
+                  fontWeight: '600', 
+                  marginBottom: '12px',
+                  color: '#111827',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  🌅 Breakfast ({todayVoters.breakfast.length})
                 </div>
-              ))}
-              <button className="cancel-btn" onClick={() => setShowVotersModal(false)} style={{ marginTop:'8px' }}>Close</button>
+                {todayVoters.breakfast.length > 0 ? (
+                  <div className="selection-list">
+                    {todayVoters.breakfast.map((voter, index) => (
+                      <div key={index} className="selection-item">
+                        <div className="selection-name">{voter.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ 
+                    padding: '12px', 
+                    background: '#f9fafb', 
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    color: '#6b7280'
+                  }}>
+                    No votes for breakfast yet
+                  </div>
+                )}
+              </div>
+
+              {/* Lunch Voters */}
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ 
+                  fontSize: '16px', 
+                  fontWeight: '600', 
+                  marginBottom: '12px',
+                  color: '#111827',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  🍱 Lunch ({todayVoters.lunch?.length || 0})
+                </div>
+                {todayVoters.lunch && todayVoters.lunch.length > 0 ? (
+                  <div className="selection-list">
+                    {todayVoters.lunch.map((voter, index) => (
+                      <div key={index} className="selection-item">
+                        <div className="selection-name">{voter.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ 
+                    padding: '12px', 
+                    background: '#f9fafb', 
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    color: '#6b7280'
+                  }}>
+                    No votes for lunch yet
+                  </div>
+                )}
+              </div>
+
+              {/* Dinner Voters */}
+              <div>
+                <div style={{ 
+                  fontSize: '16px', 
+                  fontWeight: '600', 
+                  marginBottom: '12px',
+                  color: '#111827',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  🌙 Dinner ({todayVoters.dinner.length})
+                </div>
+                {todayVoters.dinner.length > 0 ? (
+                  <div className="selection-list">
+                    {todayVoters.dinner.map((voter, index) => (
+                      <div key={index} className="selection-item">
+                        <div className="selection-name">{voter.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ 
+                    padding: '12px', 
+                    background: '#f9fafb', 
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    color: '#6b7280'
+                  }}>
+                    No votes for dinner yet
+                  </div>
+                )}
+              </div>
+
+              <button className="cancel-btn" onClick={() => setShowVotersModal(false)} style={{ marginTop:'16px', width:'100%' }}>Close</button>
             </div>
           </div>
         </div>
@@ -289,3 +487,4 @@ function MessHome() {
 }
 
 export default MessHome;
+

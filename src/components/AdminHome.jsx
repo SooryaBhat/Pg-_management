@@ -82,12 +82,13 @@ function AdminHome() {
       const currClean = getCleanDate(currDate);
       if (currClean.getTime() === todayClean.getTime()) {
         if (curr.breakfast) acc.breakfast++;
+        if (curr.lunch) acc.lunch++;
         if (curr.dinner) acc.dinner++;
         acc.total++;
       }
     }
     return acc;
-  }, { breakfast: 0, dinner: 0, total: 0 });
+  }, { breakfast: 0, lunch: 0, dinner: 0, total: 0 });
 
   // Dynamically calculate Tomorrow's Count
   const tomorrowCount = selections.reduce((acc, curr) => {
@@ -96,12 +97,13 @@ function AdminHome() {
       const currClean = getCleanDate(currDate);
       if (currClean.getTime() === tomorrowClean.getTime()) {
         if (curr.breakfast) acc.breakfast++;
+        if (curr.lunch) acc.lunch++;
         if (curr.dinner) acc.dinner++;
         acc.total++;
       }
     }
     return acc;
-  }, { breakfast: 0, dinner: 0, total: 0 });
+  }, { breakfast: 0, lunch: 0, dinner: 0, total: 0 });
 
   // Dynamically calculate Advance Count (unique dates with selections > tomorrow)
   const advanceDates = new Set();
@@ -185,6 +187,7 @@ function AdminHome() {
           name,
           username,
           breakfast: selection.breakfast || false,
+          lunch: selection.lunch || false,
           dinner: selection.dinner || false,
           date: selection.date, // YYYY-MM-DD string
           timestamp: parseDate(selection.date)?.getTime() || 0
@@ -210,7 +213,7 @@ function AdminHome() {
 
   const totalCount = modalData.length;
   const breakfastCountVal = modalData.filter(d => d.breakfast).length;
-  const lunchCountVal = 0;
+  const lunchCountVal = modalData.filter(d => d.lunch).length;
   const dinnerCountVal = modalData.filter(d => d.dinner).length;
 
   const filteredModalData = modalData.filter(item => {
@@ -247,7 +250,7 @@ function AdminHome() {
         <div className="count-label">Today's Food Count</div>
         <div className="count-number">{todayCount.total}</div>
         <div className="count-details">
-          Breakfast: {todayCount.breakfast} • Dinner: {todayCount.dinner}
+          Breakfast: {todayCount.breakfast} • Lunch: {todayCount.lunch} • Dinner: {todayCount.dinner}
         </div>
       </div>
 
@@ -255,7 +258,7 @@ function AdminHome() {
         <div className="count-label">Tomorrow's Food Count</div>
         <div className="count-number">{tomorrowCount.total}</div>
         <div className="count-details">
-          Breakfast: {tomorrowCount.breakfast} • Dinner: {tomorrowCount.dinner}
+          Breakfast: {tomorrowCount.breakfast} • Lunch: {tomorrowCount.lunch} • Dinner: {tomorrowCount.dinner}
         </div>
       </div>
 
@@ -333,9 +336,9 @@ function AdminHome() {
                           <span>🍳 Breakfast:</span>
                           <strong>{item.breakfast ? 'Yes' : 'No'}</strong>
                         </div>
-                        <div className="vdm-meal-status no">
+                        <div className={`vdm-meal-status ${item.lunch ? 'yes' : 'no'}`}>
                           <span>🥗 Lunch:</span>
-                          <strong>No</strong>
+                          <strong>{item.lunch ? 'Yes' : 'No'}</strong>
                         </div>
                         <div className={`vdm-meal-status ${item.dinner ? 'yes' : 'no'}`}>
                           <span>🍽️ Dinner:</span>

@@ -64,7 +64,7 @@ function Payment({ userType, currentUser }) {
   const [monthlyData, setMonthlyData] = useState({
     month: '', rent: isMess ? 0 : RENT_AMOUNT,
     foodDays: 0, foodCost: 0, total: isMess ? 0 : RENT_AMOUNT,
-    breakfastCount: 0, dinnerCount: 0, activePlan: 'A'
+    breakfastCount: 0, lunchCount: 0, dinnerCount: 0, activePlan: 'A'
   });
 
   const [userPlans,   setUserPlans]   = useState({});
@@ -107,6 +107,7 @@ function Payment({ userType, currentUser }) {
       let foodCost = 0;
       let totalAmount = 0;
       let totalBreakfast = 0;
+      let totalLunch = 0;
       let totalDinner = 0;
       let daysWithFood = 0;
 
@@ -133,8 +134,9 @@ function Payment({ userType, currentUser }) {
               if (snap.exists()) {
                 const d = snap.data();
                 if (d.breakfast) totalBreakfast++;
+                if (d.lunch)     totalLunch++;
                 if (d.dinner)    totalDinner++;
-                if (d.breakfast || d.dinner) daysWithFood++;
+                if (d.breakfast || d.lunch || d.dinner) daysWithFood++;
               }
             } catch { /* skip */ }
           }
@@ -150,6 +152,7 @@ function Payment({ userType, currentUser }) {
         foodCost,
         total:          totalAmount,
         breakfastCount: totalBreakfast,
+        lunchCount:     totalLunch,
         dinnerCount:    totalDinner,
         activePlan,
       });
@@ -425,6 +428,7 @@ function Payment({ userType, currentUser }) {
         {!isMess && monthlyData.activePlan === 'C' && (
           <div className="breakdown-meals">
             <div className="meal-count"><span className="meal-icon">🍳</span><span>Breakfast: {monthlyData.breakfastCount} days</span></div>
+            <div className="meal-count"><span className="meal-icon">🍱</span><span>Lunch: {monthlyData.lunchCount} days (Not charged)</span></div>
             <div className="meal-count"><span className="meal-icon">🍽️</span><span>Dinner: {monthlyData.dinnerCount} days</span></div>
           </div>
         )}

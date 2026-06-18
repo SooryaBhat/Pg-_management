@@ -5,12 +5,14 @@ import { doc, setDoc, getDoc, onSnapshot, collection, query, where, getDocs } fr
 
 function PGMemberHome() {
   const [breakfast, setBreakfast] = useState(false);
+  const [lunch, setLunch] = useState(false);
   const [dinner, setDinner] = useState(false);
   const [selectedDates, setSelectedDates] = useState({});
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showModal, setShowModal] = useState(null);
   const [showVotersModal, setShowVotersModal] = useState(false);
-  const [todayVoters, setTodayVoters] = useState({ breakfast: [], dinner: [] });
+  const [todayVoters, setTodayVoters] = useState({ breakfast: [], lunch: [], dinner: [] });
+  const [modalMeals, setModalMeals] = useState({ breakfast: false, lunch: false, dinner: false });
   const [announcement, setAnnouncement] = useState('');
   const [loading, setLoading] = useState(false);
   const [votersLoading, setVotersLoading] = useState(false);
@@ -27,6 +29,12 @@ function PGMemberHome() {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  };
+
+  const parseDate = (dateStr) => {
+    if (!dateStr) return null;
+    const [year, month, day] = dateStr.split('-');
+    return new Date(Number(year), Number(month) - 1, Number(day));
   };
 
   const todayKey = formatDateKey(today);
@@ -53,15 +61,17 @@ function PGMemberHome() {
         if (docSnap.exists()) {
           const data = docSnap.data();
           setBreakfast(data.breakfast || false);
+          setLunch(data.lunch || false);
           setDinner(data.dinner || false);
           console.log('✅ Loaded today selection:', data);
         } else {
           setBreakfast(false);
+          setLunch(false);
           setDinner(false);
         }
       },
       (error) => {
-        console.error('Error loading selection:', error);
+        console.error('Error loading today selection:', error);
       }
     );
 
@@ -91,13 +101,11 @@ function PGMemberHome() {
           
           if (selectionDoc.exists()) {
             const data = selectionDoc.data();
-            if (data.breakfast && data.dinner) {
-              selections[dateKey] = 'both';
-            } else if (data.breakfast) {
-              selections[dateKey] = 'breakfast';
-            } else if (data.dinner) {
-              selections[dateKey] = 'dinner';
-            }
+            selections[dateKey] = {
+              breakfast: data.breakfast || false,
+              lunch: data.lunch || false,
+              dinner: data.dinner || false
+            };
           }
         }
         
@@ -122,6 +130,7 @@ function PGMemberHome() {
       const snapshot = await getDocs(q);
       
       const breakfastVoters = [];
+      const lunchVoters = [];
       const dinnerVoters = [];
       
       for (const docSnap of snapshot.docs) {
@@ -134,10 +143,11 @@ function PGMemberHome() {
         const voterInfo = { name: userName };
         
         if (selection.breakfast) breakfastVoters.push(voterInfo);
-        if (selection.dinner) dinnerVoters.push(voterInfo);
+        if (selection.lunch)     lunchVoters.push(voterInfo);
+        if (selection.dinner)    dinnerVoters.push(voterInfo);
       }
       
-      setTodayVoters({ breakfast: breakfastVoters, dinner: dinnerVoters });
+      setTodayVoters({ breakfast: breakfastVoters, lunch: lunchVoters, dinner: dinnerVoters });
       setShowVotersModal(true);
     } catch (error) {
       console.error('Error loading voters:', error);
@@ -148,18 +158,20 @@ function PGMemberHome() {
   };
 
   // Save today's selection
-  const saveTodaySelection = async (isBreakfast, value) => {
+  const saveTodaySelection = async (mealType, value) => {
     if (!auth.currentUser) return;
     
     setLoading(true);
     try {
-      const newBreakfast = isBreakfast ? value : breakfast;
-      const newDinner = !isBreakfast ? value : dinner;
+      const newBreakfast = mealType === 'breakfast' ? value : breakfast;
+      const newLunch     = mealType === 'lunch' ? value : lunch;
+      const newDinner    = mealType === 'dinner' ? value : dinner;
 
       await setDoc(doc(db, 'foodSelections', `${auth.currentUser.uid}_${todayKey}`), {
         userId: auth.currentUser.uid,
         date: todayKey,
         breakfast: newBreakfast,
+        lunch: newLunch,
         dinner: newDinner,
         timestamp: new Date()
       }, { merge: true });
@@ -168,11 +180,9 @@ function PGMemberHome() {
     } catch (error) {
       console.error('❌ Error saving selection:', error);
       alert('Failed to save: ' + error.message);
-      if (isBreakfast) {
-        setBreakfast(!value);
-      } else {
-        setDinner(!value);
-      }
+      if (mealType === 'breakfast') setBreakfast(!value);
+      else if (mealType === 'lunch')     setLunch(!value);
+      else if (mealType === 'dinner')    setDinner(!value);
     } finally {
       setLoading(false);
     }
@@ -181,47 +191,44 @@ function PGMemberHome() {
   const handleBreakfastToggle = () => {
     const newValue = !breakfast;
     setBreakfast(newValue);
-    saveTodaySelection(true, newValue);
+    saveTodaySelection('breakfast', newValue);
+  };
+
+  const handleLunchToggle = () => {
+    const newValue = !lunch;
+    setLunch(newValue);
+    saveTodaySelection('lunch', newValue);
   };
 
   const handleDinnerToggle = () => {
     const newValue = !dinner;
     setDinner(newValue);
-    saveTodaySelection(false, newValue);
+    saveTodaySelection('dinner', newValue);
   };
 
-  const handleDateClick = (dateKey) => setShowModal(dateKey);
+  const handleDateClick = (dateKey) => {
+    const currentSel = selectedDates[dateKey] || { breakfast: false, lunch: false, dinner: false };
+    setModalMeals({ ...currentSel });
+    setShowModal(dateKey);
+  };
 
-  const handleSelection = async (type) => {
+  const handleSaveAdvanceSelection = async () => {
     if (!auth.currentUser) return;
 
     try {
-      if (type === null) {
-        await setDoc(doc(db, 'foodSelections', `${auth.currentUser.uid}_${showModal}`), {
-          userId: auth.currentUser.uid,
-          date: showModal,
-          breakfast: false,
-          dinner: false,
-          timestamp: new Date()
-        });
+      await setDoc(doc(db, 'foodSelections', `${auth.currentUser.uid}_${showModal}`), {
+        userId: auth.currentUser.uid,
+        date: showModal,
+        breakfast: modalMeals.breakfast,
+        lunch: modalMeals.lunch,
+        dinner: modalMeals.dinner,
+        timestamp: new Date()
+      });
 
-        const newDates = { ...selectedDates };
-        delete newDates[showModal];
-        setSelectedDates(newDates);
-      } else {
-        const breakfastValue = type === 'both' || type === 'breakfast';
-        const dinnerValue = type === 'both' || type === 'dinner';
-
-        await setDoc(doc(db, 'foodSelections', `${auth.currentUser.uid}_${showModal}`), {
-          userId: auth.currentUser.uid,
-          date: showModal,
-          breakfast: breakfastValue,
-          dinner: dinnerValue,
-          timestamp: new Date()
-        });
-
-        setSelectedDates({ ...selectedDates, [showModal]: type });
-      }
+      setSelectedDates(prev => ({
+        ...prev,
+        [showModal]: { ...modalMeals }
+      }));
       
       console.log('✅ Advance selection saved');
     } catch (error) {
@@ -250,19 +257,23 @@ function PGMemberHome() {
         currentMonth.getMonth() === today.getMonth() &&
         currentMonth.getFullYear() === today.getFullYear();
 
+      const hasBreakfast = selection && selection.breakfast;
+      const hasLunch = selection && selection.lunch;
+      const hasDinner = selection && selection.dinner;
+      const hasAnySelection = hasBreakfast || hasLunch || hasDinner;
+
       let className = 'calendar-date';
-      if (selection === 'both') className += ' selected-both';
-      else if (selection === 'breakfast') className += ' selected-breakfast';
-      else if (selection === 'dinner') className += ' selected-dinner';
+      if (hasAnySelection) className += ' selected-any';
       if (isToday) className += ' today';
 
       dates.push(
         <div key={date} className={className} onClick={() => handleDateClick(dateKey)}>
           <span>{date}</span>
-          {selection && (
+          {selection && hasAnySelection && (
             <div className="date-indicators">
-              <div className="date-dot"></div>
-              {selection === 'both' && <div className="date-dot"></div>}
+              {hasBreakfast && <div className="date-dot breakfast" title="Breakfast"></div>}
+              {hasLunch && <div className="date-dot lunch" title="Lunch"></div>}
+              {hasDinner && <div className="date-dot dinner" title="Dinner"></div>}
             </div>
           )}
         </div>
@@ -307,6 +318,16 @@ function PGMemberHome() {
         </div>
 
         <div className="toggle-row">
+          <span className="toggle-label">Lunch</span>
+          <div 
+            className={`toggle-switch ${lunch ? 'active' : ''}`}
+            onClick={handleLunchToggle}
+          >
+            <div className="toggle-slider"></div>
+          </div>
+        </div>
+
+        <div className="toggle-row">
           <span className="toggle-label">Dinner</span>
           <div 
             className={`toggle-switch ${dinner ? 'active' : ''}`}
@@ -317,8 +338,12 @@ function PGMemberHome() {
         </div>
 
         <div className="status-message">
-          {breakfast && dinner ? 'You have selected breakfast and dinner for today' :
+          {breakfast && lunch && dinner ? 'You have selected all meals for today' :
+           breakfast && dinner ? 'You have selected breakfast and dinner for today' :
+           breakfast && lunch ? 'You have selected breakfast and lunch for today' :
+           lunch && dinner ? 'You have selected lunch and dinner for today' :
            breakfast ? 'You have selected breakfast for today' :
+           lunch ? 'You have selected lunch for today' :
            dinner ? 'You have selected dinner for today' :
            'No meals selected for today'}
         </div>
@@ -382,7 +407,7 @@ function PGMemberHome() {
       {/* Date Selection Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
             <div className="modal-header">
               <h3 className="modal-title">Select Meals</h3>
               <button className="modal-close" onClick={() => setShowModal(null)}>
@@ -390,22 +415,57 @@ function PGMemberHome() {
               </button>
             </div>
             <div className="modal-body">
-              <div className="selection-options">
-                <div className="selection-option" onClick={() => handleSelection('both')}>
-                  Both (Breakfast & Dinner)
+              <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '16px' }}>
+                Toggle selections for {parseDate(showModal)?.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+              
+              <div className="selection-options" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div className="toggle-row" style={{ padding: '4px 0' }}>
+                  <span className="toggle-label" style={{ fontSize: '15px', fontWeight: '500' }}>Breakfast</span>
+                  <div 
+                    className={`toggle-switch ${modalMeals.breakfast ? 'active' : ''}`}
+                    onClick={() => setModalMeals(prev => ({ ...prev, breakfast: !prev.breakfast }))}
+                  >
+                    <div className="toggle-slider"></div>
+                  </div>
                 </div>
-                <div className="selection-option" onClick={() => handleSelection('breakfast')}>
-                  Breakfast Only
+
+                <div className="toggle-row" style={{ padding: '4px 0' }}>
+                  <span className="toggle-label" style={{ fontSize: '15px', fontWeight: '500' }}>Lunch</span>
+                  <div 
+                    className={`toggle-switch ${modalMeals.lunch ? 'active' : ''}`}
+                    onClick={() => setModalMeals(prev => ({ ...prev, lunch: !prev.lunch }))}
+                  >
+                    <div className="toggle-slider"></div>
+                  </div>
                 </div>
-                <div className="selection-option" onClick={() => handleSelection('dinner')}>
-                  Dinner Only
+
+                <div className="toggle-row" style={{ padding: '4px 0' }}>
+                  <span className="toggle-label" style={{ fontSize: '15px', fontWeight: '500' }}>Dinner</span>
+                  <div 
+                    className={`toggle-switch ${modalMeals.dinner ? 'active' : ''}`}
+                    onClick={() => setModalMeals(prev => ({ ...prev, dinner: !prev.dinner }))}
+                  >
+                    <div className="toggle-slider"></div>
+                  </div>
                 </div>
-                <div className="selection-option" onClick={() => handleSelection(null)}>
-                  None
+                
+                <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                  <button 
+                    className="pay-submit-btn" 
+                    onClick={handleSaveAdvanceSelection}
+                    style={{ margin: 0, flex: 1 }}
+                  >
+                    Save
+                  </button>
+                  <button 
+                    className="cancel-btn" 
+                    onClick={() => setShowModal(null)}
+                    style={{ margin: 0, flex: 1 }}
+                  >
+                    Cancel
+                  </button>
                 </div>
-                <button className="cancel-btn" onClick={() => setShowModal(null)}>
-                  Cancel
-                </button>
               </div>
             </div>
           </div>
@@ -422,7 +482,7 @@ function PGMemberHome() {
                 <CloseIcon />
               </button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
               {/* Breakfast Voters */}
               <div style={{ marginBottom: '20px' }}>
                 <div style={{ 
@@ -453,6 +513,40 @@ function PGMemberHome() {
                     color: '#6b7280'
                   }}>
                     No votes for breakfast yet
+                  </div>
+                )}
+              </div>
+
+              {/* Lunch Voters */}
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ 
+                  fontSize: '16px', 
+                  fontWeight: '600', 
+                  marginBottom: '12px',
+                  color: '#111827',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  🍱 Lunch ({todayVoters.lunch?.length || 0})
+                </div>
+                {todayVoters.lunch && todayVoters.lunch.length > 0 ? (
+                  <div className="selection-list">
+                    {todayVoters.lunch.map((voter, index) => (
+                      <div key={index} className="selection-item">
+                        <div className="selection-name">{voter.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ 
+                    padding: '12px', 
+                    background: '#f9fafb', 
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    color: '#6b7280'
+                  }}>
+                    No votes for lunch yet
                   </div>
                 )}
               </div>
@@ -494,7 +588,7 @@ function PGMemberHome() {
               <button 
                 className="cancel-btn" 
                 onClick={() => setShowVotersModal(false)}
-                style={{ marginTop: '16px' }}
+                style={{ marginTop: '16px', width: '100%' }}
               >
                 Close
               </button>

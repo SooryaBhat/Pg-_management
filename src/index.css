@@ -548,6 +548,9 @@ body {
   border-radius: 50%;
   background: currentColor;
 }
+.date-dot.breakfast { background: #f59e0b; }
+.date-dot.lunch { background: #10b981; }
+.date-dot.dinner { background: #6366f1; }
 
 /* ═══════════════════════════════════════════════════════════
    CHAT — WhatsApp-style
@@ -3654,6 +3657,7 @@ body {
   display: inline-block;
 }
 .ap-meal-dot.b { background: #f59e0b; }
+.ap-meal-dot.l { background: #10b981; }
 .ap-meal-dot.d { background: #6366f1; }
 
 .ap-daily-legend {

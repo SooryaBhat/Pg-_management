@@ -51,8 +51,8 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
   for (let d = 1; d <= daysInMonth; d++) {
     const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const sel = selMap[dateKey];
-    if (sel && (sel.breakfast || sel.dinner)) {
-      days.push({ d, dateKey, breakfast: sel.breakfast, dinner: sel.dinner });
+    if (sel && (sel.breakfast || sel.lunch || sel.dinner)) {
+      days.push({ d, dateKey, breakfast: sel.breakfast, lunch: sel.lunch, dinner: sel.dinner });
     }
   }
 
@@ -164,6 +164,7 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
             {user.userType === 'pg_member' && user.activePlan === 'C' && (
               <div className="breakdown-meals">
                 <div className="meal-count"><span className="meal-icon">🍳</span> Breakfast: {user.breakfast} days</div>
+                <div className="meal-count"><span className="meal-icon">🍱</span> Lunch: {user.lunch} days (Not charged)</div>
                 <div className="meal-count"><span className="meal-icon">🍽️</span> Dinner: {user.dinner} days</div>
               </div>
             )}
@@ -266,6 +267,7 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
                       <span className="ap-daily-num">{day.d}</span>
                       <div className="ap-daily-meals">
                         {day.breakfast && <span className="ap-meal-dot b" title="Breakfast" />}
+                        {day.lunch     && <span className="ap-meal-dot l" title="Lunch" />}
                         {day.dinner    && <span className="ap-meal-dot d" title="Dinner" />}
                       </div>
                     </div>
@@ -273,6 +275,7 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
                 </div>
                 <div className="ap-daily-legend">
                   <span><span className="ap-meal-dot b" /> Breakfast</span>
+                  <span><span className="ap-meal-dot l" /> Lunch</span>
                   <span><span className="ap-meal-dot d" /> Dinner</span>
                 </div>
               </>
@@ -368,7 +371,7 @@ function GroupSection({ label, users, onUserClick, color }) {
 
 // ─── CSV Export ───────────────────────────────────────────────────────────────
 function exportCSV(users, monthLabel) {
-  const headers = ['Name','Username','Role','Selected Plan','Food Days','Breakfast','Dinner','Rent (₹)','Food Cost (₹)','Total (₹)','UTR','Payment Status'];
+  const headers = ['Name','Username','Role','Selected Plan','Food Days','Breakfast','Lunch','Dinner','Rent (₹)','Food Cost (₹)','Total (₹)','UTR','Payment Status'];
   const rows = users.map(u => [
     u.displayName,
     u.username || '',
@@ -376,6 +379,7 @@ function exportCSV(users, monthLabel) {
     u.userType === 'pg_member' ? `Plan ${u.activePlan}` : 'Mess (Flat)',
     u.foodDays,
     u.breakfast,
+    u.lunch,
     u.dinner,
     u.rent,
     u.foodCost,
@@ -454,8 +458,9 @@ function AdminPayment() {
       const computed = members.map(u => {
         const sels      = foodByUser[u.uid] || [];
         const breakfast = sels.filter(s => s.breakfast).length;
+        const lunch     = sels.filter(s => s.lunch).length;
         const dinner    = sels.filter(s => s.dinner).length;
-        const foodDays  = sels.filter(s => s.breakfast || s.dinner).length;
+        const foodDays  = sels.filter(s => s.breakfast || s.lunch || s.dinner).length;
 
         let rent = 0;
         let foodCost = 0;
@@ -491,7 +496,7 @@ function AdminPayment() {
         return {
           ...u,
           displayName:   u.fullName || u.name || u.username || 'Unknown',
-          breakfast, dinner, foodDays, foodCost, rent, total, activePlan,
+          breakfast, lunch, dinner, foodDays, foodCost, rent, total, activePlan,
           payment,       // full payment object (or null)
           paymentStatus, // 'paid' | 'pending_review' | 'rejected' | 'pending'
           selections:    sels,
