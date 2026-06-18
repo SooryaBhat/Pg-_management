@@ -244,16 +244,10 @@ export async function runPaymentReminderCheck() {
         } else {
           // pg_member plan calculation
           const activePlan = getUserPlanForMonth(member.monthlyPlans, monthKey);
-          if (activePlan === 'A') {
-            total = 5700;
-          } else if (activePlan === 'B') {
+          if (activePlan === 'B') {
             total = 3000;
-          } else { // Plan C
-            const sels = foodByUser[member.uid] || [];
-            const breakfastCount = sels.filter(s => s.breakfast).length;
-            const dinnerCount = sels.filter(s => s.dinner).length;
-            const foodCost = (breakfastCount * 35) + (dinnerCount * 40);
-            total = 2500 + foodCost;
+          } else { // Plan A (default)
+            total = 5700;
           }
         }
 

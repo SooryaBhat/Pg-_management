@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { 
   doc, getDoc, collection, query, where, onSnapshot, 
@@ -34,6 +34,10 @@ const USER_TYPE_COLORS = {
 };
 
 function App() {
+  const renderCount = useRef(0);
+  renderCount.current++;
+  console.log(`[App Render] Render #${renderCount.current}, userType: ${localStorage.getItem('userType') || 'null'}`);
+
   const [userType,    setUserType]    = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab,   setActiveTab]   = useState('home');

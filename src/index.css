@@ -60,9 +60,11 @@ body {
   flex-direction: column;
   background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   padding: 32px 24px;
+  overflow-y: auto;
 }
 
 .auth-header {
+  flex-shrink: 0;
   text-align: center;
   margin-bottom: 40px;
   padding-top: 40px;
@@ -100,6 +102,7 @@ body {
 }
 
 .auth-tabs {
+  flex-shrink: 0;
   display: flex;
   background: rgba(255,255,255,0.15);
   border-radius: 12px;
@@ -128,6 +131,7 @@ body {
 }
 
 .auth-form {
+  flex-shrink: 0;
   background: white;
   border-radius: 20px;
   padding: 28px 24px;

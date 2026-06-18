@@ -152,22 +152,9 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
                 {user.userType === 'mess_member' && <span className="breakdown-detail">Flat Mess Charge</span>}
                 {user.userType === 'pg_member' && user.activePlan === 'A' && <span className="breakdown-detail">Flat Food Charge</span>}
                 {user.userType === 'pg_member' && user.activePlan === 'B' && <span className="breakdown-detail">No Food Plan</span>}
-                {user.userType === 'pg_member' && user.activePlan === 'C' && (
-                  <span className="breakdown-detail">
-                    Breakfast: {user.breakfast} × ₹{BREAKFAST_COST} | Dinner: {user.dinner} × ₹{DINNER_COST}
-                  </span>
-                )}
               </div>
               <div className="breakdown-value">{fmtRupee(user.foodCost)}</div>
             </div>
-            
-            {user.userType === 'pg_member' && user.activePlan === 'C' && (
-              <div className="breakdown-meals">
-                <div className="meal-count"><span className="meal-icon">🍳</span> Breakfast: {user.breakfast} days</div>
-                <div className="meal-count"><span className="meal-icon">🍱</span> Lunch: {user.lunch} days (Not charged)</div>
-                <div className="meal-count"><span className="meal-icon">🍽️</span> Dinner: {user.dinner} days</div>
-              </div>
-            )}
             
             <div className="breakdown-separator" />
             <div className="breakdown-row breakdown-total">
@@ -295,18 +282,12 @@ function PlanBadge({ user }) {
   let className = 'ap-plan-badge mess';
   
   if (user.userType === 'pg_member') {
-    if (user.activePlan === 'A') {
-      label = 'Rent + Food';
-      className = 'ap-plan-badge rent-food';
-    } else if (user.activePlan === 'B') {
+    if (user.activePlan === 'B') {
       label = 'Rent Only';
       className = 'ap-plan-badge rent-only';
-    } else if (user.activePlan === 'C') {
-      label = 'Breakfast + Dinner';
-      className = 'ap-plan-badge meals';
     } else {
-      label = `Plan ${user.activePlan}`;
-      className = 'ap-plan-badge';
+      label = 'Rent + Food';
+      className = 'ap-plan-badge rent-food';
     }
   }
 
@@ -475,18 +456,15 @@ function AdminPayment() {
         } else {
           // pg_member
           activePlan = getUserPlanForMonth(u.monthlyPlans, key);
-          if (activePlan === 'A') {
-            rent = 2500;
-            foodCost = 3200;
-            total = 5700;
-          } else if (activePlan === 'B') {
+          if (activePlan === 'B') {
             rent = 3000;
             foodCost = 0;
             total = 3000;
-          } else { // Plan C
+          } else { // Default Plan A
             rent = 2500;
-            foodCost = (breakfast * BREAKFAST_COST) + (dinner * DINNER_COST);
-            total = rent + foodCost;
+            foodCost = 3200;
+            total = 5700;
+            activePlan = 'A';
           }
         }
 
@@ -522,7 +500,6 @@ function AdminPayment() {
       if (planFilter === 'all') return true;
       if (planFilter === 'A') return u.userType === 'pg_member' && u.activePlan === 'A';
       if (planFilter === 'B') return u.userType === 'pg_member' && u.activePlan === 'B';
-      if (planFilter === 'C') return u.userType === 'pg_member' && u.activePlan === 'C';
       if (planFilter === 'mess') return u.userType === 'mess_member';
       return true;
     })
@@ -623,7 +600,6 @@ function AdminPayment() {
             <option value="all">All Plans</option>
             <option value="A">Rent + Food</option>
             <option value="B">Rent Only</option>
-            <option value="C">Breakfast + Dinner</option>
             <option value="mess">Mess Member</option>
           </select>
           <select className="ap-filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>

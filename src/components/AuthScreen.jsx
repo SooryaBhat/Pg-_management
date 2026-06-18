@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { BuildingIcon } from "./Icons";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
@@ -12,6 +12,26 @@ const USER_TYPE_LABELS = {
 };
 
 function AuthScreen({ onLogin }) {
+  const renderCount = useRef(0);
+  renderCount.current++;
+  
+  useEffect(() => {
+    console.log(`[AuthScreen Mount] Component mounted (Render #${renderCount.current})`);
+    return () => {
+      console.log("[AuthScreen Unmount] Component unmounted");
+    };
+  }, []);
+
+  console.log(`[AuthScreen Render] Render #${renderCount.current}`);
+
+  const handleInputFocus = (e) => {
+    console.log(`[Input Focus] Field: "${e.target.placeholder || e.target.name || e.target.type}"`);
+  };
+
+  const handleInputBlur = (e) => {
+    console.log(`[Input Blur] Field: "${e.target.placeholder || e.target.name || e.target.type}"`);
+  };
+
   const [activeTab, setActiveTab] = useState("login");
   const [loading,   setLoading]   = useState(false);
 
@@ -123,6 +143,7 @@ function AuthScreen({ onLogin }) {
       {/* Tabs */}
       <div className="auth-tabs">
         <button
+          type="button"
           className={`auth-tab ${activeTab === "login" ? "active" : ""}`}
           onClick={() => setActiveTab("login")}
           disabled={loading}
@@ -130,6 +151,7 @@ function AuthScreen({ onLogin }) {
           Login
         </button>
         <button
+          type="button"
           className={`auth-tab ${activeTab === "signup" ? "active" : ""}`}
           onClick={() => setActiveTab("signup")}
           disabled={loading}
@@ -145,6 +167,7 @@ function AuthScreen({ onLogin }) {
           <div className="auth-role-selector">
             {["admin", "pg_member", "mess_member"].map((type) => (
               <button
+                type="button"
                 key={type}
                 className={`auth-role-btn ${loginData.userType === type ? "selected" : ""}`}
                 onClick={() => setLoginData({ ...loginData, userType: type })}
@@ -160,6 +183,8 @@ function AuthScreen({ onLogin }) {
             placeholder="Username"
             value={loginData.username}
             onChange={(e) => setLoginData({ ...loginData, username: e.target.value })}
+            onFocus={handleInputFocus}
+            onBlur={handleInputBlur}
             disabled={loading}
           />
           <input
@@ -169,9 +194,12 @@ function AuthScreen({ onLogin }) {
             value={loginData.password}
             onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
             onKeyDown={(e) => handleKeyDown(e, handleLogin)}
+            onFocus={handleInputFocus}
+            onBlur={handleInputBlur}
             disabled={loading}
           />
           <button
+            type="button"
             className="auth-button"
             onClick={handleLogin}
             disabled={loading}
@@ -187,6 +215,7 @@ function AuthScreen({ onLogin }) {
           <div className="auth-role-selector">
             {["pg_member", "mess_member"].map((type) => (
               <button
+                type="button"
                 key={type}
                 className={`auth-role-btn ${signupData.userType === type ? "selected" : ""}`}
                 onClick={() => setSignupData({ ...signupData, userType: type })}
@@ -207,6 +236,8 @@ function AuthScreen({ onLogin }) {
             placeholder="Full Name"
             value={signupData.fullName}
             onChange={(e) => setSignupData({ ...signupData, fullName: e.target.value })}
+            onFocus={handleInputFocus}
+            onBlur={handleInputBlur}
             disabled={loading}
           />
           <input
@@ -214,6 +245,8 @@ function AuthScreen({ onLogin }) {
             placeholder="Username (letters, numbers, underscore)"
             value={signupData.username}
             onChange={(e) => setSignupData({ ...signupData, username: e.target.value.toLowerCase() })}
+            onFocus={handleInputFocus}
+            onBlur={handleInputBlur}
             disabled={loading}
           />
           <input
@@ -223,9 +256,12 @@ function AuthScreen({ onLogin }) {
             value={signupData.password}
             onChange={(e) => setSignupData({ ...signupData, password: e.target.value })}
             onKeyDown={(e) => handleKeyDown(e, handleSignup)}
+            onFocus={handleInputFocus}
+            onBlur={handleInputBlur}
             disabled={loading}
           />
           <button
+            type="button"
             className="auth-button"
             onClick={handleSignup}
             disabled={loading}
