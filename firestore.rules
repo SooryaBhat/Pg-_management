@@ -61,5 +61,13 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if false;
     }
+
+    // Notifications:
+    // Any authenticated user can create notifications (e.g. system alerts, payment verification logs)
+    // Users can read, update (mark as read), or delete only their own notifications
+    match /notifications/{docId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
   }
 }
