@@ -127,15 +127,11 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
 
         <div className="modal-body ap-detail-body">
           {/* Role & Plan badge */}
-          <div className="ap-badge-row" style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+          <div className="ap-badge-row" style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '16px' }}>
             <div className={`payment-type-badge ${user.userType === 'pg_member' ? 'pg' : 'mess'}`}>
               {user.userType === 'pg_member' ? '🏠 PG Member' : '🍽 Mess Member'}
             </div>
-            {user.userType === 'pg_member' && (
-              <div className="payment-type-badge pg" style={{ background: '#f5f3ff', color: '#4f46e5', border: '1px solid #ddd6fe' }}>
-                Plan {user.activePlan}
-              </div>
-            )}
+            <PlanBadge user={user} />
           </div>
 
           {/* Bill summary */}
@@ -290,6 +286,34 @@ function DetailModal({ user, selectedMonth, onClose, onStatusChange }) {
   );
 }
 
+// ─── Plan Badge ──────────────────────────────────────────────────────────────
+function PlanBadge({ user }) {
+  let label = 'Mess Member';
+  let className = 'ap-plan-badge mess';
+  
+  if (user.userType === 'pg_member') {
+    if (user.activePlan === 'A') {
+      label = 'Rent + Food';
+      className = 'ap-plan-badge rent-food';
+    } else if (user.activePlan === 'B') {
+      label = 'Rent Only';
+      className = 'ap-plan-badge rent-only';
+    } else if (user.activePlan === 'C') {
+      label = 'Breakfast + Dinner';
+      className = 'ap-plan-badge meals';
+    } else {
+      label = `Plan ${user.activePlan}`;
+      className = 'ap-plan-badge';
+    }
+  }
+
+  return (
+    <span className={className}>
+      {label}
+    </span>
+  );
+}
+
 // ─── User Card ────────────────────────────────────────────────────────────────
 function UserCard({ user, onClick }) {
   const color = user.userType === 'pg_member' ? '#10b981' : '#f59e0b';
@@ -301,10 +325,11 @@ function UserCard({ user, onClick }) {
       <div className="ap-user-info">
         <div className="ap-user-name">{user.displayName}</div>
         <div className="ap-user-sub">
-          @{user.username || '—'} &nbsp;·&nbsp; {user.userType === 'pg_member' ? `Plan ${user.activePlan}` : 'Mess (Flat)'} &nbsp;·&nbsp; {user.foodDays} food day{user.foodDays !== 1 ? 's' : ''}
+          @{user.username || '—'} &nbsp;·&nbsp; {user.foodDays} food day{user.foodDays !== 1 ? 's' : ''}
         </div>
+        <PlanBadge user={user} />
         {user.payment?.utr && (
-          <div className="ap-user-sub-detail">UTR: {user.payment.utr}</div>
+          <div className="ap-user-sub-detail" style={{ marginTop: '4px' }}>UTR: {user.payment.utr}</div>
         )}
       </div>
       <div className="ap-user-right">
@@ -378,6 +403,7 @@ function AdminPayment() {
   const [loading,       setLoading]       = useState(true);
   const [search,        setSearch]        = useState('');
   const [roleFilter,    setRoleFilter]    = useState('all');
+  const [planFilter,    setPlanFilter]    = useState('all');
   const [statusFilter,  setStatusFilter]  = useState('all');
   const [detailUser,    setDetailUser]    = useState(null);
 
@@ -487,6 +513,14 @@ function AdminPayment() {
   const filtered = allUsers
     .filter(u => roleFilter === 'all' || u.userType === roleFilter)
     .filter(u => statusFilter === 'all' || u.paymentStatus === statusFilter)
+    .filter(u => {
+      if (planFilter === 'all') return true;
+      if (planFilter === 'A') return u.userType === 'pg_member' && u.activePlan === 'A';
+      if (planFilter === 'B') return u.userType === 'pg_member' && u.activePlan === 'B';
+      if (planFilter === 'C') return u.userType === 'pg_member' && u.activePlan === 'C';
+      if (planFilter === 'mess') return u.userType === 'mess_member';
+      return true;
+    })
     .filter(u => !search ||
       u.displayName.toLowerCase().includes(search.toLowerCase()) ||
       (u.username || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -497,10 +531,10 @@ function AdminPayment() {
   const messMembers = filtered.filter(u => u.userType === 'mess_member');
 
   // ── Summary stats ───────────────────────────────────────────────────────────
-  const totalOutstanding = allUsers.filter(u => u.paymentStatus !== 'paid').reduce((s, u) => s + u.total, 0);
-  const countPending     = allUsers.filter(u => u.paymentStatus === 'pending').length;
-  const countReview      = allUsers.filter(u => u.paymentStatus === 'pending_review').length;
-  const countPaid        = allUsers.filter(u => u.paymentStatus === 'paid').length;
+  const totalOutstanding = filtered.filter(u => u.paymentStatus !== 'paid').reduce((s, u) => s + u.total, 0);
+  const countPending     = filtered.filter(u => u.paymentStatus === 'pending').length;
+  const countReview      = filtered.filter(u => u.paymentStatus === 'pending_review').length;
+  const countPaid        = filtered.filter(u => u.paymentStatus === 'paid').length;
 
   return (
     <div className="ap-container" id="ap-printable">
@@ -579,6 +613,13 @@ function AdminPayment() {
             <option value="all">All Roles</option>
             <option value="pg_member">🏠 PG Members</option>
             <option value="mess_member">🍽 Mess Members</option>
+          </select>
+          <select className="ap-filter-select" value={planFilter} onChange={e => setPlanFilter(e.target.value)}>
+            <option value="all">All Plans</option>
+            <option value="A">Rent + Food</option>
+            <option value="B">Rent Only</option>
+            <option value="C">Breakfast + Dinner</option>
+            <option value="mess">Mess Member</option>
           </select>
           <select className="ap-filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="all">All Status</option>

@@ -8,6 +8,7 @@ function AdminHome() {
   const [announcement, setAnnouncement] = useState('');
   const [showModal, setShowModal] = useState(null);
   const [modalData, setModalData] = useState([]);
+  const [modalSearch, setModalSearch] = useState('');
   const [selections, setSelections] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -149,64 +150,56 @@ function AdminHome() {
   };
 
   const handleCardClick = async (type) => {
+    setModalSearch('');
     try {
-      if (type === 'today' || type === 'tomorrow') {
-        const targetTime = type === 'today' ? todayClean.getTime() : tomorrowClean.getTime();
-        const filteredSelections = selections.filter(s => {
-          const sDate = parseDate(s.date);
-          return sDate && getCleanDate(sDate).getTime() === targetTime;
-        });
+      // Fetch all users in a single batch to perform fast memory lookups
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const usersMap = {};
+      usersSnap.docs.forEach(doc => {
+        usersMap[doc.id] = doc.data();
+      });
+
+      const targetTimeToday = todayClean.getTime();
+      const targetTimeTomorrow = tomorrowClean.getTime();
+
+      const filteredSelections = selections.filter(s => {
+        const sDate = parseDate(s.date);
+        if (!sDate) return false;
+        const sTime = getCleanDate(sDate).getTime();
         
-        const data = [];
-        for (const selection of filteredSelections) {
-          // Get user details
-          const userDoc = await getDocs(query(collection(db, 'users'), where('__name__', '==', selection.userId)));
-          let userName = 'Unknown';
-          
-          if (!userDoc.empty) {
-            const userData = userDoc.docs[0].data();
-            userName = userData.fullName || userData.name || userData.username || 'Unknown';
-          }
-          
-          data.push({
-            name: userName,
-            breakfast: selection.breakfast,
-            dinner: selection.dinner
-          });
+        if (type === 'today') return sTime === targetTimeToday;
+        if (type === 'tomorrow') return sTime === targetTimeTomorrow;
+        return sTime > targetTimeTomorrow; // upcoming
+      });
+
+      const data = filteredSelections.map(selection => {
+        const userData = usersMap[selection.userId];
+        let name = 'Unknown';
+        let username = '';
+        if (userData) {
+          name = userData.fullName || userData.name || userData.username || 'Unknown';
+          username = userData.username || '';
         }
-        
-        setModalData(data);
-      } else if (type === 'upcoming') {
-        const futureSelections = new Map();
-        
-        selections.forEach((selection) => {
-          const sDate = parseDate(selection.date);
-          if (sDate) {
-            const cleanSDate = getCleanDate(sDate);
-            const sTime = cleanSDate.getTime();
-            if (sTime > tomorrowClean.getTime()) {
-              if (!futureSelections.has(sTime)) {
-                futureSelections.set(sTime, { breakfast: 0, dinner: 0, dateObj: cleanSDate });
-              }
-              const counts = futureSelections.get(sTime);
-              if (selection.breakfast) counts.breakfast++;
-              if (selection.dinner) counts.dinner++;
-            }
-          }
-        });
-        
-        const data = Array.from(futureSelections.entries()).map(([timeKey, info]) => {
-          return {
-            date: info.dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-            breakfast: info.breakfast,
-            dinner: info.dinner,
-            sortKey: timeKey
-          };
-        }).sort((a, b) => a.sortKey - b.sortKey);
-        
-        setModalData(data);
+        return {
+          userId: selection.userId,
+          name,
+          username,
+          breakfast: selection.breakfast || false,
+          dinner: selection.dinner || false,
+          date: selection.date, // YYYY-MM-DD string
+          timestamp: parseDate(selection.date)?.getTime() || 0
+        };
+      });
+
+      // Sort chronologically for upcoming
+      if (type === 'upcoming') {
+        data.sort((a, b) => a.timestamp - b.timestamp);
+      } else {
+        // Sort alphabetically by name
+        data.sort((a, b) => a.name.localeCompare(b.name));
       }
-      
+
+      setModalData(data);
       setShowModal(type);
     } catch (error) {
       console.error('Error loading modal data:', error);
@@ -214,6 +207,20 @@ function AdminHome() {
       setShowModal(type);
     }
   };
+
+  const totalCount = modalData.length;
+  const breakfastCountVal = modalData.filter(d => d.breakfast).length;
+  const lunchCountVal = 0;
+  const dinnerCountVal = modalData.filter(d => d.dinner).length;
+
+  const filteredModalData = modalData.filter(item => {
+    if (!modalSearch.trim()) return true;
+    const s = modalSearch.toLowerCase();
+    return (
+      item.name.toLowerCase().includes(s) ||
+      item.username.toLowerCase().includes(s)
+    );
+  });
 
   return (
     <div className="home-content">
@@ -259,47 +266,89 @@ function AdminHome() {
       </div>
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">
+        <div className="vdm-overlay" onClick={() => { setShowModal(null); setModalSearch(''); }}>
+          <div className="vdm-container" onClick={(e) => e.stopPropagation()}>
+            <div className="vdm-header">
+              <h3 className="vdm-title">
                 {showModal === 'today' ? "Today's" :
                  showModal === 'tomorrow' ? "Tomorrow's" :
-                 "Upcoming"} Food Selections
+                 "Upcoming"} Selections
               </h3>
-              <button className="modal-close" onClick={() => setShowModal(null)}>
+              <button className="vdm-close" onClick={() => { setShowModal(null); setModalSearch(''); }}>
                 <CloseIcon />
               </button>
             </div>
-            <div className="modal-body">
-              {modalData.length > 0 ? (
-                <div className="selection-list">
-                  {showModal === 'upcoming' ? (
-                    modalData.map((item, index) => (
-                      <div key={index} className="selection-item">
-                        <div className="selection-name">{item.date}</div>
-                        <div className="selection-meals">
-                          Breakfast: {item.breakfast} • Dinner: {item.dinner}
+            
+            <div className="vdm-body">
+              {/* Summary Banner */}
+              <div className="vdm-summary-banner">
+                <div className="vdm-summary-item">
+                  <span className="vdm-summary-val">{totalCount}</span>
+                  <span className="vdm-summary-lbl">Total</span>
+                </div>
+                <div className="vdm-summary-item">
+                  <span className="vdm-summary-val">{breakfastCountVal}</span>
+                  <span className="vdm-summary-lbl">Breakfast</span>
+                </div>
+                <div className="vdm-summary-item">
+                  <span className="vdm-summary-val">{lunchCountVal}</span>
+                  <span className="vdm-summary-lbl">Lunch</span>
+                </div>
+                <div className="vdm-summary-item">
+                  <span className="vdm-summary-val">{dinnerCountVal}</span>
+                  <span className="vdm-summary-lbl">Dinner</span>
+                </div>
+              </div>
+
+              {/* Search input */}
+              <div className="vdm-search-wrap">
+                <input
+                  type="text"
+                  className="vdm-search-input"
+                  placeholder="🔍 Search by name or username..."
+                  value={modalSearch}
+                  onChange={(e) => setModalSearch(e.target.value)}
+                />
+              </div>
+
+              {/* Member cards list */}
+              {filteredModalData.length > 0 ? (
+                <div className="vdm-list">
+                  {filteredModalData.map((item, index) => (
+                    <div key={index} className="vdm-card">
+                      <div className="vdm-card-header">
+                        <div>
+                          <div className="vdm-member-name">{item.name}</div>
+                          {item.username && (
+                            <div className="vdm-member-user">@{item.username}</div>
+                          )}
+                        </div>
+                        <div className="vdm-vote-date">
+                          📅 {parseDate(item.date)?.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                         </div>
                       </div>
-                    ))
-                  ) : (
-                    modalData.map((item, index) => (
-                      <div key={index} className="selection-item">
-                        <div className="selection-info">
-                          <div className="selection-name">{item.name}</div>
+                      
+                      <div className="vdm-meals-row">
+                        <div className={`vdm-meal-status ${item.breakfast ? 'yes' : 'no'}`}>
+                          <span>🍳 Breakfast:</span>
+                          <strong>{item.breakfast ? 'Yes' : 'No'}</strong>
                         </div>
-                        <div className="selection-meals">
-                          {item.breakfast && <span className="meal-badge">B</span>}
-                          {item.dinner && <span className="meal-badge">D</span>}
+                        <div className="vdm-meal-status no">
+                          <span>🥗 Lunch:</span>
+                          <strong>No</strong>
+                        </div>
+                        <div className={`vdm-meal-status ${item.dinner ? 'yes' : 'no'}`}>
+                          <span>🍽️ Dinner:</span>
+                          <strong>{item.dinner ? 'Yes' : 'No'}</strong>
                         </div>
                       </div>
-                    ))
-                  )}
+                    </div>
+                  ))}
                 </div>
               ) : (
-                <div className="empty-state">
-                  <div className="empty-text">No data available</div>
+                <div className="vdm-empty">
+                  <div className="vdm-empty-icon">🍽️</div>
+                  <div className="vdm-empty-text">No votes found</div>
                 </div>
               )}
             </div>
