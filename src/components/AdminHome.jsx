@@ -50,6 +50,13 @@ function AdminHome() {
   const todayClean = getCleanDate(currentDate);
   const tomorrowClean = new Date(todayClean);
   tomorrowClean.setDate(tomorrowClean.getDate() + 1);
+  const advanceStartDate = new Date(tomorrowClean);
+  advanceStartDate.setDate(advanceStartDate.getDate() + 1);
+
+  // Human-readable date labels for the count cards
+  const todayDateLabel = todayClean.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const tomorrowDateLabel = tomorrowClean.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const advanceDateLabel = advanceStartDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
   // Load announcement
   useEffect(() => {
@@ -75,46 +82,48 @@ function AdminHome() {
     return () => unsubscribe();
   }, []);
 
-  // Dynamically calculate Today's Count
+  // Today's Count — only records with at least one meal selected
   const todayCount = selections.reduce((acc, curr) => {
     const currDate = parseDate(curr.date);
-    if (currDate) {
-      const currClean = getCleanDate(currDate);
-      if (currClean.getTime() === todayClean.getTime()) {
-        if (curr.breakfast) acc.breakfast++;
-        if (curr.lunch) acc.lunch++;
-        if (curr.dinner) acc.dinner++;
-        acc.total++;
-      }
-    }
+    if (!currDate) return acc;
+    const currClean = getCleanDate(currDate);
+    if (currClean.getTime() !== todayClean.getTime()) return acc;
+    if (!curr.breakfast && !curr.lunch && !curr.dinner) return acc; // skip empty votes
+    if (curr.breakfast) acc.breakfast++;
+    if (curr.lunch) acc.lunch++;
+    if (curr.dinner) acc.dinner++;
+    acc.total++;
     return acc;
   }, { breakfast: 0, lunch: 0, dinner: 0, total: 0 });
 
-  // Dynamically calculate Tomorrow's Count
+  // Tomorrow's Count — only records with at least one meal selected
   const tomorrowCount = selections.reduce((acc, curr) => {
     const currDate = parseDate(curr.date);
-    if (currDate) {
-      const currClean = getCleanDate(currDate);
-      if (currClean.getTime() === tomorrowClean.getTime()) {
-        if (curr.breakfast) acc.breakfast++;
-        if (curr.lunch) acc.lunch++;
-        if (curr.dinner) acc.dinner++;
-        acc.total++;
-      }
-    }
+    if (!currDate) return acc;
+    const currClean = getCleanDate(currDate);
+    if (currClean.getTime() !== tomorrowClean.getTime()) return acc;
+    if (!curr.breakfast && !curr.lunch && !curr.dinner) return acc; // skip empty votes
+    if (curr.breakfast) acc.breakfast++;
+    if (curr.lunch) acc.lunch++;
+    if (curr.dinner) acc.dinner++;
+    acc.total++;
     return acc;
   }, { breakfast: 0, lunch: 0, dinner: 0, total: 0 });
 
-  // Dynamically calculate Advance Count (unique dates with selections > tomorrow)
+  // Advance Count — unique dates after tomorrow with at least one meal selected
   const advanceDates = new Set();
+  const advanceCount = { breakfast: 0, lunch: 0, dinner: 0, total: 0 };
   selections.forEach(curr => {
     const currDate = parseDate(curr.date);
-    if (currDate) {
-      const currClean = getCleanDate(currDate);
-      if (currClean.getTime() > tomorrowClean.getTime()) {
-        advanceDates.add(currClean.getTime());
-      }
-    }
+    if (!currDate) return;
+    const currClean = getCleanDate(currDate);
+    if (currClean.getTime() <= tomorrowClean.getTime()) return;
+    if (!curr.breakfast && !curr.lunch && !curr.dinner) return; // skip empty votes
+    advanceDates.add(currClean.getTime());
+    if (curr.breakfast) advanceCount.breakfast++;
+    if (curr.lunch) advanceCount.lunch++;
+    if (curr.dinner) advanceCount.dinner++;
+    advanceCount.total++;
   });
   const upcomingCount = advanceDates.size;
 
@@ -168,7 +177,8 @@ function AdminHome() {
         const sDate = parseDate(s.date);
         if (!sDate) return false;
         const sTime = getCleanDate(sDate).getTime();
-        
+        // Exclude empty votes from detail popup
+        if (!s.breakfast && !s.lunch && !s.dinner) return false;
         if (type === 'today') return sTime === targetTimeToday;
         if (type === 'tomorrow') return sTime === targetTimeTomorrow;
         return sTime > targetTimeTomorrow; // upcoming
@@ -248,24 +258,31 @@ function AdminHome() {
 
       <div className="count-card" onClick={() => handleCardClick('today')}>
         <div className="count-label">Today's Food Count</div>
+        <div className="count-date-label">📅 {todayDateLabel}</div>
         <div className="count-number">{todayCount.total}</div>
         <div className="count-details">
-          Breakfast: {todayCount.breakfast} • Lunch: {todayCount.lunch} • Dinner: {todayCount.dinner}
+          Breakfast: {todayCount.breakfast} &bull; Lunch: {todayCount.lunch} &bull; Dinner: {todayCount.dinner}
         </div>
       </div>
 
       <div className="count-card" onClick={() => handleCardClick('tomorrow')}>
         <div className="count-label">Tomorrow's Food Count</div>
+        <div className="count-date-label">📅 {tomorrowDateLabel}</div>
         <div className="count-number">{tomorrowCount.total}</div>
         <div className="count-details">
-          Breakfast: {tomorrowCount.breakfast} • Lunch: {tomorrowCount.lunch} • Dinner: {tomorrowCount.dinner}
+          Breakfast: {tomorrowCount.breakfast} &bull; Lunch: {tomorrowCount.lunch} &bull; Dinner: {tomorrowCount.dinner}
         </div>
       </div>
 
       <div className="count-card" onClick={() => handleCardClick('upcoming')}>
-        <div className="count-label">Upcoming (Advance Votes)</div>
+        <div className="count-label">Advance Count</div>
+        <div className="count-date-label">📅 {advanceDateLabel} onwards</div>
         <div className="count-number">{upcomingCount}</div>
-        <div className="count-details">{upcomingCount} dates with selections</div>
+        <div className="count-details">
+          {advanceCount.total > 0
+            ? `B: ${advanceCount.breakfast} • L: ${advanceCount.lunch} • D: ${advanceCount.dinner}`
+            : 'No advance votes yet'}
+        </div>
       </div>
 
       {showModal && (

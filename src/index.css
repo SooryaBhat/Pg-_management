@@ -2034,7 +2034,15 @@ body {
   font-size: 14px;
   color: rgba(255,255,255,0.8);
   font-weight: 500;
-  margin-bottom: 12px;
+  margin-bottom: 4px;
+}
+
+.count-date-label {
+  font-size: 13px;
+  color: rgba(255,255,255,0.65);
+  font-weight: 500;
+  margin-bottom: 10px;
+  letter-spacing: 0.01em;
 }
 
 .count-number {
@@ -2047,6 +2055,193 @@ body {
 .count-details {
   font-size: 13px;
   color: rgba(255,255,255,0.75);
+}
+
+/* ─── Advance Voting Modal (Mobile-first bottom sheet) ─── */
+.adv-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 2000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  animation: fadeBg 0.2s ease;
+}
+
+@keyframes fadeBg {
+  from { background: rgba(0,0,0,0); }
+  to   { background: rgba(0,0,0,0.55); }
+}
+
+.adv-modal {
+  background: #fff;
+  width: 100%;
+  max-width: 480px;
+  border-radius: 24px 24px 0 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  animation: advSlideUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  overflow: hidden;
+}
+
+@keyframes advSlideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+/* Drag handle bar */
+.adv-modal-handle {
+  width: 40px;
+  height: 4px;
+  background: #d1d5db;
+  border-radius: 2px;
+  margin: 14px auto 0;
+  flex-shrink: 0;
+}
+
+/* Header — fixed, never scrolls */
+.adv-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 18px 24px 16px;
+  border-bottom: 1px solid #f3f4f6;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.adv-modal-title-wrap { flex: 1; }
+
+.adv-modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.3;
+}
+
+.adv-modal-date-lbl {
+  font-size: 13px;
+  color: #6b7280;
+  margin-top: 3px;
+  font-weight: 500;
+}
+
+.adv-modal-close {
+  width: 34px;
+  height: 34px;
+  background: #f3f4f6;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.adv-modal-close:hover { background: #e5e7eb; }
+
+.adv-modal-close svg {
+  width: 16px;
+  height: 16px;
+  stroke: #374151;
+}
+
+/* Body — scrollable meals list */
+.adv-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 24px;
+}
+
+.adv-modal-meal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.adv-modal-meal-row:last-child { border-bottom: none; }
+
+.adv-modal-meal-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.adv-modal-meal-emoji {
+  font-size: 22px;
+  line-height: 1;
+}
+
+/* Footer — fixed at bottom, always visible */
+.adv-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #f3f4f6;
+  flex-shrink: 0;
+  background: #fff;
+  display: flex;
+  gap: 12px;
+  /* Safe area for notched phones */
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
+.adv-modal-save-btn {
+  flex: 2;
+  padding: 14px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s;
+  box-shadow: 0 4px 12px rgba(99,102,241,0.35);
+}
+
+.adv-modal-save-btn:active { transform: scale(0.97); }
+
+.adv-modal-cancel-btn {
+  flex: 1;
+  padding: 14px;
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.adv-modal-cancel-btn:hover { background: #e5e7eb; }
+
+/* Desktop: centered dialog instead of bottom sheet */
+@media (min-width: 520px) {
+  .adv-modal-overlay {
+    align-items: center;
+    padding: 20px;
+  }
+  .adv-modal {
+    border-radius: 20px;
+    max-height: 80vh;
+    animation: advFadeScale 0.2s ease-out;
+  }
+  @keyframes advFadeScale {
+    from { transform: scale(0.94); opacity: 0; }
+    to   { transform: scale(1);    opacity: 1; }
+  }
+  .adv-modal-handle { display: none; }
 }
 
 /* Modal */

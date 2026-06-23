@@ -484,69 +484,79 @@ function PGMemberHome() {
         </div>
       </div>
 
-      {/* Date Selection Modal */}
+      {/* Advance Voting Modal — mobile-first bottom sheet */}
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
-            <div className="modal-header">
-              <h3 className="modal-title">Select Meals</h3>
-              <button className="modal-close" onClick={() => setShowModal(null)}>
+        <div className="adv-modal-overlay" onClick={() => setShowModal(null)}>
+          <div className="adv-modal" onClick={e => e.stopPropagation()}>
+
+            {/* Drag handle (hidden on desktop) */}
+            <div className="adv-modal-handle" />
+
+            {/* Fixed header */}
+            <div className="adv-modal-header">
+              <div className="adv-modal-title-wrap">
+                <div className="adv-modal-title">Select Meals</div>
+                <div className="adv-modal-date-lbl">
+                  {parseDate(showModal)?.toLocaleDateString('en-IN', {
+                    weekday: 'short', day: 'numeric', month: 'long', year: 'numeric'
+                  })}
+                </div>
+              </div>
+              <button className="adv-modal-close" onClick={() => setShowModal(null)}>
                 <CloseIcon />
               </button>
             </div>
-            <div className="modal-body">
-              <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '16px' }}>
-                Meals for {parseDate(showModal)?.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
-              </p>
 
-              <div className="selection-options" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div className="toggle-row" style={{ padding: '4px 0' }}>
-                  <span className="toggle-label" style={{ fontSize: '15px', fontWeight: '500' }}>Breakfast</span>
-                  <div
-                    className={`toggle-switch ${modalMeals.breakfast ? 'active' : ''}`}
-                    onClick={() => setModalMeals(prev => ({ ...prev, breakfast: !prev.breakfast }))}
-                  >
-                    <div className="toggle-slider"></div>
-                  </div>
+            {/* Scrollable meals */}
+            <div className="adv-modal-body">
+              <div className="adv-modal-meal-row">
+                <div className="adv-modal-meal-label">
+                  <span className="adv-modal-meal-emoji">🌅</span>
+                  Breakfast
                 </div>
-
-                <div className="toggle-row" style={{ padding: '4px 0' }}>
-                  <span className="toggle-label" style={{ fontSize: '15px', fontWeight: '500' }}>Lunch</span>
-                  <div
-                    className={`toggle-switch ${modalMeals.lunch ? 'active' : ''}`}
-                    onClick={() => setModalMeals(prev => ({ ...prev, lunch: !prev.lunch }))}
-                  >
-                    <div className="toggle-slider"></div>
-                  </div>
-                </div>
-
-                <div className="toggle-row" style={{ padding: '4px 0' }}>
-                  <span className="toggle-label" style={{ fontSize: '15px', fontWeight: '500' }}>Dinner</span>
-                  <div
-                    className={`toggle-switch ${modalMeals.dinner ? 'active' : ''}`}
-                    onClick={() => setModalMeals(prev => ({ ...prev, dinner: !prev.dinner }))}
-                  >
-                    <div className="toggle-slider"></div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                  <button
-                    className="pay-submit-btn"
-                    onClick={handleSaveAdvanceSelection}
-                    style={{ margin: 0, flex: 1 }}
-                  >
-                    Save
-                  </button>
-                  <button
-                    className="cancel-btn"
-                    onClick={() => setShowModal(null)}
-                    style={{ margin: 0, flex: 1 }}
-                  >
-                    Cancel
-                  </button>
+                <div
+                  className={`toggle-switch ${modalMeals.breakfast ? 'active' : ''}`}
+                  onClick={() => setModalMeals(prev => ({ ...prev, breakfast: !prev.breakfast }))}
+                >
+                  <div className="toggle-slider" />
                 </div>
               </div>
+
+              <div className="adv-modal-meal-row">
+                <div className="adv-modal-meal-label">
+                  <span className="adv-modal-meal-emoji">🍱</span>
+                  Lunch
+                </div>
+                <div
+                  className={`toggle-switch ${modalMeals.lunch ? 'active' : ''}`}
+                  onClick={() => setModalMeals(prev => ({ ...prev, lunch: !prev.lunch }))}
+                >
+                  <div className="toggle-slider" />
+                </div>
+              </div>
+
+              <div className="adv-modal-meal-row">
+                <div className="adv-modal-meal-label">
+                  <span className="adv-modal-meal-emoji">🌙</span>
+                  Dinner
+                </div>
+                <div
+                  className={`toggle-switch ${modalMeals.dinner ? 'active' : ''}`}
+                  onClick={() => setModalMeals(prev => ({ ...prev, dinner: !prev.dinner }))}
+                >
+                  <div className="toggle-slider" />
+                </div>
+              </div>
+            </div>
+
+            {/* Fixed footer — always visible */}
+            <div className="adv-modal-footer">
+              <button className="adv-modal-save-btn" onClick={handleSaveAdvanceSelection}>
+                Save Vote
+              </button>
+              <button className="adv-modal-cancel-btn" onClick={() => setShowModal(null)}>
+                Cancel
+              </button>
             </div>
           </div>
         </div>
