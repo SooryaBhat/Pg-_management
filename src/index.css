@@ -420,6 +420,11 @@ body {
   transform: translateX(20px);
 }
 
+.toggle-switch.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Status Message */
 .status-message {
   background: #eff6ff;
@@ -537,6 +542,14 @@ body {
   background: transparent;
   border-color: transparent;
   cursor: default;
+}
+
+/* Highlighted when voting for tomorrow (after 7 PM cutoff) */
+.calendar-date.vote-day {
+  border: 2px solid #f59e0b;
+  color: #b45309;
+  font-weight: 800;
+  background: #fffbeb;
 }
 
 .date-indicators {
